@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Performance Checks</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050505;
+            --surface: rgba(20, 20, 22, 0.75);
+            --txt: #f8fafc;
+            --muted: #a1a1aa;
+            --grad: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+            --accent: #4facfe;
+            --glow: rgba(79, 172, 254, 0.35);
+            --green: #10b981;
+            --red: #f43f5e;
+            --radius: 16px;
+            --ease: cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg);
+            background-image:
+                radial-gradient(circle at 0% 0%, rgba(79, 172, 254, .15) 0%, transparent 40%),
+                radial-gradient(circle at 100% 100%, rgba(0, 242, 254, .1) 0%, transparent 40%);
+            color: var(--txt);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-attachment: fixed;
+        }
+
+        .wrap {
+            max-width: 1320px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            width: 100%;
+        }
+
+        .hero {
+            text-align: center;
+            margin-bottom: 44px;
+            animation: slideDown .8s var(--ease);
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-24px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .hero h1 {
+            font-size: 3.2rem;
+            font-weight: 800;
+            background: var(--grad);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -1px;
+            margin-bottom: 10px;
+        }
+
+        .hero p {
+            color: var(--muted);
+            font-weight: 300;
+            max-width: 620px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        .panel {
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: var(--radius);
+            padding: 28px;
+            transition: all .4s var(--ease);
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .2), transparent);
+            opacity: 0;
+            transition: opacity .4s;
+        }
+
+        .panel:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, .4), 0 0 20px var(--glow);
+            border-color: rgba(255, 255, 255, .15);
+        }
+
+        .panel:hover::before { opacity: 1; }
+
+        .btn {
+            background: var(--grad);
+            color: #fff;
+            border: none;
+            padding: 13px 26px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all .4s var(--ease);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 8px 24px var(--glow);
+            font-family: inherit;
+            font-size: .97rem;
+            text-decoration: none;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px) scale(1.04);
+            box-shadow: 0 12px 32px var(--glow);
+        }
+        
+        .btn.ghost {
+            background: transparent;
+            box-shadow: none;
+            border: 1px solid rgba(255, 255, 255, .15);
+            color: var(--muted);
+        }
+
+        .btn.ghost:hover:not(:disabled) {
+            border-color: var(--accent);
+            color: var(--txt);
+            transform: none;
+            box-shadow: none;
+        }
+
+        .grid {
+            display: grid;
+            gap: 22px;
+            grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+        }
+
+        .mc {
+            background: rgba(0, 0, 0, .3);
+            border-radius: 12px;
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, .04);
+            transition: all .3s var(--ease);
+            margin-bottom: 12px;
+        }
+
+        .mc:hover {
+            background: rgba(0, 0, 0, .5);
+            border-color: rgba(255, 255, 255, .1);
+        }
+
+        .mv {
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin-top: 6px;
+            background: var(--grad);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .mv.ok {
+            background: linear-gradient(135deg, #10b981, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .mv.bad {
+            background: linear-gradient(135deg, #f43f5e, #fb7185);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .muted { color: var(--muted); font-size: .9rem; }
+        .bold { font-weight: 600; }
+        .flex { display: flex; align-items: center; justify-content: space-between; }
+        
+        .spin {
+            width: 46px; height: 46px;
+            border: 3px solid rgba(255, 255, 255, .1);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: rot 1s linear infinite;
+            margin: 0 auto 14px;
+        }
+        @keyframes rot { 100% { transform: rotate(360deg); } }
+
+        #load-box {
+            text-align: center;
+            padding: 40px;
+        }
+        
+        h2 { margin-bottom: 16px; font-weight: 600; }
+        h3 { margin-bottom: 12px; font-weight: 600; color: var(--accent); }
+
+        .bar-bg {
+            background: rgba(255, 255, 255, .1);
+            height: 10px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 0 auto 12px;
+            max-width: 560px;
+        }
+
+        .bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width .8s var(--ease);
+            background: var(--grad);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <header class="hero">
+            <h1>Model Performance</h1>
+            <p>Evaluating Secular Trend Removal and ARIMA Pre-whitening</p>
+            <div style="margin-top: 20px;">
+                <a href="/" class="btn ghost">← Back to Screener</a>
+            </div>
+        </header>
+
+        <div id="load-box" class="panel">
+            <h3 id="load-txt" style="margin-bottom:14px;font-weight:600;font-size:1.15rem">Initializing statistical tests...</h3>
+            <div class="bar-bg">
+                <div id="load-fill" class="bar-fill" style="width:0%"></div>
+            </div>
+            <p id="load-eta" class="muted" style="font-size:.92rem">Estimating time…</p>
+        </div>
+
+        <div id="results-container" style="display: none;">
+            <!-- Content will be injected here -->
+        </div>
+
+    </div>
+
+    <script>
+        async function fetchPerformance() {
+            const tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "META"];
+            const total = tickers.length;
+            let completed = 0;
+            const t0 = Date.now();
+
+            const loadBox = document.getElementById('load-box');
+            const loadTxt = document.getElementById('load-txt');
+            const loadFill = document.getElementById('load-fill');
+            const loadEta = document.getElementById('load-eta');
+            const container = document.getElementById('results-container');
+            
+            let html = '';
+            let ewmaTime = 0;
+
+            try {
+                for (const tk of tickers) {
+                    const tkStart = Date.now();
+                    const res = await fetch(`/api/model_performance/${tk}`);
+                    const json = await res.json();
+                    
+                    if (json.status === 'success') {
+                        const item = json.data;
+                        const t = item.trend_eval;
+                        const a = item.arima_eval;
+
+                        html += `
+                            <div class="panel">
+                                <h2>${item.ticker}</h2>
+                                <div class="grid">
+                                    <div>
+                                        <h3>Trend Removal (HP Filter)</h3>
+                                        <div class="mc">
+                                            <div class="muted">ADF p-value (Original)</div>
+                                            <div class="mv ${t.adf_pvalue_original > 0.05 ? 'bad' : 'ok'}">${t.adf_pvalue_original.toFixed(4)}</div>
+                                        </div>
+                                        <div class="mc">
+                                            <div class="muted">ADF p-value (Detrended)</div>
+                                            <div class="mv ${t.adf_pvalue_detrended > 0.05 ? 'bad' : 'ok'}">${t.adf_pvalue_detrended.toFixed(4)}</div>
+                                            <p class="muted" style="margin-top:4px;font-size:0.75rem">Lower is better (target &lt; 0.05)</p>
+                                        </div>
+                                        <div class="mc">
+                                            <div class="muted">Autocorrelation Lag-1</div>
+                                            <div class="flex" style="margin-top: 6px;">
+                                                <div>
+                                                    <span class="muted" style="font-size:0.8rem">Orig:</span>
+                                                    <span style="font-weight:600">${t.acf_lag1_original.toFixed(3)}</span>
+                                                </div>
+                                                <div>→</div>
+                                                <div>
+                                                    <span class="muted" style="font-size:0.8rem">Detrended:</span>
+                                                    <span style="font-weight:600" class="${Math.abs(t.acf_lag1_detrended) < Math.abs(t.acf_lag1_original) ? 'ok' : 'bad'}">${t.acf_lag1_detrended.toFixed(3)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h3>ARIMA(1,1,1) Pre-whitening</h3>
+                                        <div class="mc">
+                                            <div class="muted">Autocorrelation Reduction</div>
+                                            <div class="mv ${a.reduction_in_autocorrelation > 0 ? 'ok' : 'bad'}">${a.reduction_in_autocorrelation.toFixed(3)}</div>
+                                        </div>
+                                        <div class="mc">
+                                            <div class="muted">Residuals ACF Lag-1</div>
+                                            <div class="flex" style="margin-top: 6px;">
+                                                <div>
+                                                    <span class="muted" style="font-size:0.8rem">Orig:</span>
+                                                    <span style="font-weight:600">${a.acf_lag1_original.toFixed(3)}</span>
+                                                </div>
+                                                <div>→</div>
+                                                <div>
+                                                    <span class="muted" style="font-size:0.8rem">Resid:</span>
+                                                    <span style="font-weight:600" class="${Math.abs(a.acf_lag1_residuals) < Math.abs(a.acf_lag1_original) ? 'ok' : 'bad'}">${a.acf_lag1_residuals.toFixed(3)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="mc">
+                                            <div class="muted">Model Info</div>
+                                            <div class="flex" style="margin-top: 6px;">
+                                                <span style="font-size:0.9rem">AIC: <span class="bold">${a.arima_aic.toFixed(1)}</span></span>
+                                                <span style="font-size:0.9rem">BIC: <span class="bold">${a.arima_bic.toFixed(1)}</span></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    completed++;
+                    const tkElapsed = (Date.now() - tkStart) / 1000;
+                    if (ewmaTime === 0) {
+                        ewmaTime = tkElapsed;
+                    } else {
+                        ewmaTime = 0.95 * ewmaTime + 0.05 * tkElapsed;
+                    }
+
+                    const rem = (total - completed) * ewmaTime;
+                    const mins = Math.floor(rem / 60);
+                    const secs = Math.round(rem % 60);
+                    
+                    loadTxt.innerText = `Evaluating ${tk} · ${completed}/${total}`;
+                    loadFill.style.width = `${(completed / total) * 100}%`;
+                    loadEta.innerText = mins > 0
+                        ? `~${mins}m ${secs}s remaining`
+                        : `~${secs}s remaining`;
+                }
+
+                loadBox.style.display = 'none';
+                container.style.display = 'block';
+                
+                if (html === '') {
+                    container.innerHTML = '<div class="panel"><p>No data available.</p></div>';
+                } else {
+                    container.innerHTML = html;
+                }
+
+            } catch (error) {
+                console.error(error);
+                loadBox.innerHTML = '<p class="bad" style="text-align:center;">Error loading performance data.</p>';
+            }
+        }
+
+        fetchPerformance();
+    </script>
+</body>
+</html>

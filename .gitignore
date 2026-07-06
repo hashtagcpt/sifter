@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# Node
+node_modules/
+.npm-cache/
+
+# Test/Cache
+.pytest_cache/
+.claude/
+
+# Databases
+backend/sifter.db
+*.sqlite3
+
+# Data and Cache
+backend/history/run_*.json
+backend/history/*_cache/
+backend/history/volatility_metrics.json
+backend/sector_index.json
+*.csv
+*.png
+
+# Temporary and Scratch files
+scratch/
+scratch*.py
+toy_finance_trends.py
+*conflicted copy*
+
+# Loose test files (keep tests/ directory)
+/test_*.py
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store

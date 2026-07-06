@@ -1,0 +1,9 @@
+#!/bin/bash
+cd /Users/christaylor/Dropbox/Code_2026/toy_finance
+source .venv/bin/activate
+
+# Start celery in the background
+PYTHONPATH=. celery -A backend.celery_app worker --loglevel=info &
+
+# Start fastapi
+PYTHONPATH=. python backend/main.py

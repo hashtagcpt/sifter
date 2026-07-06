@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gaps and Recommendations</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --surface-color: #f8f9fa;
+            --text-primary: #111827;
+            --text-secondary: #4b5563;
+            --accent-color: #2563eb;
+            --border-color: #e5e7eb;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+            padding: 40px 24px;
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            color: var(--text-primary);
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-top: 40px;
+            margin-bottom: 16px;
+            color: var(--accent-color);
+        }
+
+        .panel {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        p {
+            margin-bottom: 16px;
+            color: var(--text-secondary);
+        }
+
+        ul {
+            margin-bottom: 24px;
+            padding-left: 24px;
+            color: var(--text-secondary);
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .highlight {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+        
+        .button {
+            display: inline-block;
+            margin-top: 20px;
+            background: var(--surface-color);
+            color: var(--text-primary);
+            text-decoration: none;
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-weight: 600;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        .button:hover {
+            background-color: #e5e7eb;
+            border-color: #d1d5db;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gaps and Recommendations</h1>
+        <p>This report identifies gaps in the current strategy and proposes systematic enhancements to provide a robust set of metrics for human-in-the-loop screening.</p>
+
+        <div class="panel">
+            <h2>Recently Resolved Gaps (What We Built)</h2>
+            <p>We have successfully addressed several major shortcomings in the platform's initial iterations:</p>
+            <ul>
+                <li><span class="highlight">Expanded Universe & Scalability:</span> Sifter is no longer restricted to 3 hardcoded tech stocks. We implemented a web scraping pipeline that scales to 1,000+ tickers, backed by local caching and exponential backoff to handle free API rate limits (e.g., Yahoo Finance).</li>
+                <li><span class="highlight">Macroeconomic AI Context:</span> We replaced static ranking with a local Ollama LLM (gemma4:e4b) that analyzes real-time macro-economic data (interest rates, CPI, etc.) and adjusts stock scores dynamically based on their sector.</li>
+                <li><span class="highlight">UI Aesthetic Overhaul:</span> Migrated from a noisy, distracting "glassmorphism" UI to a clean, flat, 2D design with zero drop-shadows to ensure traders can focus strictly on the data.</li>
+            </ul>
+        </div>
+
+        <div class="panel">
+            <h2>Current Model Gaps</h2>
+            <p>Despite these improvements, the Sifter platform still has several critical gaps:</p>
+            <ul>
+                <li><span class="highlight">LLM Latency at Scale:</span> Running a generative AI model (Ollama) during the live screening phase for 1,000+ stocks creates significant frontend latency. The AI processing pipeline needs to be fully asynchronous or batched in the background.</li>
+                <li><span class="highlight">Lack of Backtesting on Full Universe:</span> The current strategy (Z-scores, Value Multiples, AI Sentiment) has only been validated theoretically. A robust backtesting module is needed to simulate historical performance across the entire 1,000+ stock dataset.</li>
+                <li><span class="highlight">Bayesian View Persistence:</span> Currently, when the user adjusts their expected probability and confidence sliders for the Bayesian model, the views are lost upon page reload. These should be serialized and stored in a local database.</li>
+            </ul>
+        </div>
+
+        <div class="panel">
+            <h2>Recommendations & Next Steps</h2>
+            <p>To further evolve Sifter into a production-grade trading terminal, we recommend the following roadmap:</p>
+            <ul>
+                <li><span class="highlight">Implement SQLite Database:</span> Transition away from JSON disk-caching to a robust local SQLite database. This will allow for faster querying, storing user Bayesian views permanently, and tracking historical changes in Analyst Ratings and AI Macro scores over time.</li>
+                <li><span class="highlight">Background AI Processing (Celery/Redis):</span> Offload the Ollama AI Macro adjustments to a background task queue. The frontend should instantly render the purely quantitative data (P/E, Beta, Z-scores), while a websocket or polling mechanism updates the UI with AI sentiment scores as they complete.</li>
+                <li><span class="highlight">Portfolio Construction Module:</span> Add a new dashboard tab that takes the top 20 ranked stocks from the screener and runs a Mean-Variance Optimization (Markowitz) algorithm to propose optimal portfolio weights.</li>
+            </ul>
+        </div>
+        
+        <a href="/" class="button">Back to Screener</a>
+    </div>
+</body>
+</html>

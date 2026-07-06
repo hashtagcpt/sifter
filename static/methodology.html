@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sifter Methodology</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d0d0d;
+            --surface-color: #1a1a1a;
+            --text-primary: #f8fafc;
+            --text-secondary: #a1a1aa;
+            --accent-color: #4facfe;
+            --accent-hover: #3b8cd7;
+            --success-color: #10b981;
+            --danger-color: #f43f5e;
+            --warning-color: #f59e0b;
+            --border-radius: 8px;
+            --transition: all 0.15s ease-in-out;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .app-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            width: 100%;
+        }
+
+        header {
+            margin-bottom: 40px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 24px;
+        }
+
+        .title {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: var(--accent-color);
+            margin-bottom: 8px;
+            letter-spacing: -1px;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            font-weight: 300;
+        }
+
+        h2 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin-top: 40px;
+            margin-bottom: 16px;
+            color: #ffffff;
+        }
+
+        h3 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            color: var(--accent-color);
+        }
+
+        p {
+            margin-bottom: 16px;
+            color: #d1d5db;
+        }
+
+        ul {
+            margin-bottom: 16px;
+            padding-left: 24px;
+            color: #d1d5db;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .glass-panel {
+            background: var(--surface-color);
+            border: 1px solid #333;
+            border-radius: var(--border-radius);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .math-block {
+            background: rgba(0, 0, 0, 0.4);
+            border-left: 4px solid var(--accent-color);
+            padding: 16px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 1.1em;
+            margin: 16px 0;
+            color: #e2e8f0;
+            overflow-x: auto;
+        }
+
+        a {
+            color: var(--accent-color);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .citation {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            border-radius: var(--border-radius);
+            margin-top: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .button {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid #333;
+            padding: 8px 16px;
+            border-radius: var(--border-radius);
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            font-family: inherit;
+        }
+
+        .button:hover {
+            background: #2a2a2a;
+            color: var(--text-primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <a href="/" class="button" style="margin-bottom: 24px;">&larr; Back to Dashboard</a>
+        
+        <header>
+            <h1 class="title">Sifter Methodology</h1>
+            <p class="subtitle">A deep dive into the quantitative models powering Sifter's market screening and risk probability engine.</p>
+        </header>
+
+        <section>
+            <h2>1. Composite Rank Score</h2>
+            <p>The Sifter engine evaluates the stock universe using a multi-factor composite <strong>Rank Score</strong>. This score combines fundamental value, technical mean-reversion, analyst sentiment, stochastic probabilities, and macro-AI adjustments.</p>
+            
+            <div class="glass-panel">
+                <h3>Formula</h3>
+                <div class="math-block">
+                    Rank Score = (Value Score × w_val)<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ (Trend Z-Score × w_trend)<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ (Analyst Buy Count × w_analyst)<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ (Target Probability × w_garch)<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ (AI Macro Score × w_macro)
+                </div>
+                
+                <h3>Components</h3>
+                <ul>
+                    <li><strong>Value Score:</strong> A fundamental metric derived by comparing a stock's P/E, P/B, and EV/EBITDA ratios against standardized neutral baselines. Lower multiples translate to higher (better) scores.</li>
+                    <li><strong>Trend Z-Score (Anti-Momentum):</strong> To capture mean-reversion and idiosyncratic cycles, we remove the secular market trend from the asset's log prices using a <strong>Hodrick-Prescott (HP) Filter</strong>. We then compute a rolling Z-score on the isolated cyclical component. A negative weight (e.g. <code>w_trend = -1.0</code>) means we favor technically oversold assets.</li>
+                    <li><strong>Analyst Buy Count:</strong> A sum of "Buy" and "Strong Buy" recommendations aggregated from Wall Street analysts.</li>
+                    <li><strong>Target Probability:</strong> The statistical likelihood of reaching the upside target before the downside stop, computed via Monte Carlo simulations (detailed below).</li>
+                    <li><strong>AI Macro Score:</strong> A sector-wide modifier generated by a local LLM evaluating current macroeconomic conditions (VIX, 10Y Yields) and live financial news.</li>
+                </ul>
+                
+                <div class="citation">
+                    <strong>Citation:</strong> Hodrick, R. J., & Prescott, E. C. (1997). Postwar U.S. Business Cycles: An Empirical Investigation. <em>Journal of Money, Credit and Banking</em>, 29(1), 1-16. <a href="https://www.jstor.org/stable/2953682" target="_blank">[Link]</a>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>2. Upside and Downside Risk Probabilities</h2>
+            <p>Rather than relying on static standard deviations, Sifter calculates the explicit probability of a trade hitting a defined <strong>Upside Target</strong> versus hitting a defined <strong>Downside Stop</strong> over a specific <strong>Time Horizon</strong>. This is achieved through stochastic modeling and Monte Carlo simulation.</p>
+
+            <div class="glass-panel">
+                <h3>Monte Carlo Simulation Engine</h3>
+                <p>For each asset, the engine projects thousands of potential future price paths over the given horizon. The probabilities are determined by evaluating the trajectory of each path:</p>
+                <ul>
+                    <li><strong>Probability of Success:</strong> The percentage of paths that hit the Target Upside <em>before</em> hitting the Downside Stop (or hit the upside and never hit the stop).</li>
+                    <li><strong>Probability of Stop:</strong> The percentage of paths that hit the Downside Stop <em>before</em> hitting the Target Upside.</li>
+                </ul>
+
+                <h3>Available Stochastic Models</h3>
+                <p>The path generation relies on different volatility models, primarily focusing on Generalized Autoregressive Conditional Heteroskedasticity (GARCH) to account for volatility clustering and "fat tails" commonly found in financial returns.</p>
+                
+                <ul>
+                    <li><strong>GBM (Geometric Brownian Motion):</strong> Assumes constant volatility and normally distributed returns. <br><em>Standard formula: dS = μS dt + σS dW</em></li>
+                    <li><strong>GARCH (1,1):</strong> Models changing variance over time. It predicts future volatility based on past squared returns and past variances.<br><em>Formula: σ²_t = ω + α ε²_{t-1} + β σ²_{t-1}</em></li>
+                    <li><strong>EGARCH / GJR-GARCH / TGARCH:</strong> Asymmetric extensions of GARCH that capture the "leverage effect"—the tendency for volatility to rise more following negative returns than positive returns of the same magnitude.</li>
+                    <li><strong>Historical Empirical:</strong> A non-parametric approach that samples actual rolling overlapping return paths from the asset's historical data.</li>
+                </ul>
+
+                <div class="citation">
+                    <strong>Citation:</strong> Bollerslev, T. (1986). Generalized autoregressive conditional heteroskedasticity. <em>Journal of Econometrics</em>, 31(3), 307-327. <a href="https://www.sciencedirect.com/science/article/pii/0304407686900631" target="_blank">[Link]</a>
+                </div>
+                <div class="citation">
+                    <strong>Citation:</strong> Engle, R. F. (1982). Autoregressive Conditional Heteroscedasticity with Estimates of the Variance of United Kingdom Inflation. <em>Econometrica</em>, 50(4), 987-1007. <a href="https://www.jstor.org/stable/1912773" target="_blank">[Link]</a>
+                </div>
+                <div class="citation">
+                    <strong>Web Link:</strong> <a href="https://en.wikipedia.org/wiki/Monte_Carlo_methods_in_finance" target="_blank">Monte Carlo methods in finance (Wikipedia)</a>
+                </div>
+            </div>
+        </section>
+        
+        <section>
+            <h2>3. Statistical Arbitrage (Pairs Trading)</h2>
+            <p>The Stat-Arb module evaluates the statistical relationship between two assets to find mean-reverting spreads.</p>
+            
+            <div class="glass-panel">
+                <h3>Cointegration & Half-Life</h3>
+                <p>We use the <strong>Engle-Granger Two-Step Method</strong> to test for cointegration. If the p-value is significant (&lt; 0.05), the two non-stationary price series form a stationary linear combination (the spread). The <strong>Hedge Ratio</strong> (Beta) determines the position sizing.</p>
+                <p>The mean-reverting speed of the spread is quantified by estimating the <strong>Half-Life</strong> using an Ornstein-Uhlenbeck (OU) process regression.</p>
+
+                <div class="citation">
+                    <strong>Citation:</strong> Engle, R. F., & Granger, C. W. J. (1987). Co-Integration and Error Correction: Representation, Estimation, and Testing. <em>Econometrica</em>, 55(2), 251-276. <a href="https://www.jstor.org/stable/1913236" target="_blank">[Link]</a>
+                </div>
+                <div class="citation">
+                    <strong>Web Link:</strong> <a href="https://en.wikipedia.org/wiki/Pairs_trade" target="_blank">Pairs Trade / Statistical Arbitrage (Wikipedia)</a>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>4. Volatility & Risk Metrics</h2>
+            <p>Sifter utilizes several historical and forward-looking risk metrics to contextualize asset movements and assist with dynamic position sizing or stop-loss placements.</p>
+            
+            <div class="glass-panel">
+                <h3>Realized Volatility (RV)</h3>
+                <p>The historical annualized volatility of an asset over a 21-day window.</p>
+                <div class="math-block">
+                    RV = &sigma;<sub>(21-day log returns)</sub> &times; &radic;252
+                </div>
+
+                <h3>Average True Range (ATR)</h3>
+                <p>A technical indicator measuring market volatility over a 14-day period by decomposing the entire range of an asset price for that period.</p>
+                <div class="math-block">
+                    TR = max(High - Low, |High - Prev Close|, |Low - Prev Close|)<br>
+                    ATR = 14-day Rolling Mean of TR
+                </div>
+
+                <h3>Historical Volatility Rank (HV Rank)</h3>
+                <p>The percentile rank of the current 21-day Realized Volatility relative to its range over the past year (252 trading days). A rank of 0 means volatility is at its 52-week low; 100 means it is at its 52-week high.</p>
+                <div class="math-block">
+                    HV Rank = (Current RV - Min RV<sub>252d</sub>) / (Max RV<sub>252d</sub> - Min RV<sub>252d</sub>) &times; 100
+                </div>
+
+                <h3>Current Implied Volatility (IV)</h3>
+                <p>A forward-looking metric derived from the Black-Scholes pricing of the asset's near-term options chain, reflecting the market's forecast of a likely movement in the security's price.</p>
+            </div>
+        </section>
+
+    </div>
+</body>
+</html>
