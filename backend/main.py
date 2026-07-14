@@ -328,9 +328,9 @@ def get_screener_results(prob_model: str = "garch"):
                 
             rationale = generate_rationale(tk, val_score, float(z_score), analyst_buy, funds)
             
-            # Composite rank score = Value + Momentum + Analyst Sentiment + Biweekly Probabilities
-            rank_score = val_score + (float(z_score) * 0.1) + (analyst_buy * 0.05)
-            rank_score += biweekly_probs["prob_success"] * 10.0  # Add weight for probability of success
+            # Raw composite score (Value + Momentum Reversal + Analyst + Probability)
+            raw_rank_score = val_score - (float(z_score) * 1.0) + (analyst_buy * 0.05) + (biweekly_probs["prob_success"] * 10.0)
+
             
             results.append({
                 "ticker": tk,
@@ -340,10 +340,16 @@ def get_screener_results(prob_model: str = "garch"):
                 "fundamentals": funds,
                 "rationale": rationale,
                 "biweekly_probs": biweekly_probs,
-                "rank_score": rank_score
+                "raw_rank_score": raw_rank_score
             })
         except Exception as e:
             print(f"Error screening {tk}: {e}")
+            
+    # Calculate Percentile Rank (0 to 100)
+    results.sort(key=lambda x: x["raw_rank_score"])
+    n = len(results)
+    for i, res in enumerate(results):
+        res["rank_score"] = (i / max(1, n - 1)) * 100.0 if n > 0 else 50.0
             
     # Sort by rank_score descending
     results.sort(key=lambda x: x["rank_score"], reverse=True)
@@ -414,10 +420,13 @@ def analyze_ticker(
             sentiment_note = build_ticker_sentiment_note(tk, model)
         
 
-        # Composite rank score = Value + Anti-Momentum + Analyst Sentiment + Biweekly Probabilities
-        # We penalize high Z-scores to favor mean-reversion and uncorrelated assets
-        rank_score = val_score - (float(z_score) * 1.0) + (analyst_buy * 0.05)
-        rank_score += biweekly_probs["prob_success"] * 10.0  # Add weight for probability of success
+        # Raw composite score (Value + Momentum Reversal + Analyst + Probability)
+        raw_rank_score = val_score - (float(z_score) * 1.0) + (analyst_buy * 0.05) + (biweekly_probs["prob_success"] * 10.0)
+        
+        # We can't do percentile rank for a single stock easily without loading the universe, 
+        # so we return the raw score as rank_score, or a placeholder if frontend normalizes.
+        # But we'll provide both.
+        rank_score = raw_rank_score
         
         return {
             "status": "success",
@@ -435,6 +444,7 @@ def analyze_ticker(
                 "atr": atr,
                 "hv_rank": hv_rank,
                 "current_iv": current_iv,
+                "raw_rank_score": raw_rank_score,
                 "rank_score": rank_score
             }
         }
@@ -649,6 +659,8 @@ def list_history():
                 is_expired = True
                 if realized_return is None:
                     needs_price.update(top_3_tickers)
+            else:
+                needs_price.update(top_3_tickers)
             
             parsed_files.append({
                 "filename": filename,
@@ -683,7 +695,7 @@ def list_history():
             print(f"Error downloading batch prices: {e}")
             
     for pf in parsed_files:
-        if pf["is_expired"] and pf["realized_return"] is None:
+        if (pf["is_expired"] and pf["realized_return"] is None) or not pf["is_expired"]:
             current_value = 0.0
             valid = True
             for tk in pf["top_3_tickers"]:
@@ -694,13 +706,17 @@ def list_history():
                     valid = False
             
             if valid and pf["initial_cost"] > 0:
-                pf["realized_return"] = (current_value - pf["initial_cost"]) / pf["initial_cost"]
-                try:
-                    pf["data_ref"]["realized_return"] = pf["realized_return"]
-                    with open(pf["path"], "w") as f:
-                        json.dump(pf["data_ref"], f)
-                except:
-                    pass
+                calc_return = (current_value - pf["initial_cost"]) / pf["initial_cost"]
+                if pf["is_expired"]:
+                    pf["realized_return"] = calc_return
+                    try:
+                        pf["data_ref"]["realized_return"] = pf["realized_return"]
+                        with open(pf["path"], "w") as f:
+                            json.dump(pf["data_ref"], f)
+                    except:
+                        pass
+                else:
+                    pf["realized_return"] = calc_return
 
         history_data.append({
             "filename": pf["filename"],
@@ -1062,6 +1078,75 @@ def get_sortino_baskets():
     try:
         baskets = find_top_sortino_baskets(basket_size=5, num_baskets=5, sample_size=100, iterations=10000)
         return {"status": "success", "baskets": baskets}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/performance_chart")
+def get_performance_chart(tickers: str, start_date: str):
+    try:
+        import yfinance as yf
+        from datetime import datetime, timedelta
+        
+        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+        if not ticker_list:
+            return {"status": "error", "message": "No tickers provided"}
+            
+        # Parse start_date and add 1 day to ensure we capture the start correctly
+        try:
+            start_dt = datetime.fromisoformat(start_date.replace("Z", ""))
+        except ValueError:
+            start_dt = datetime.strptime(start_date.split("T")[0], "%Y-%m-%d")
+            
+        # Fetch data from fetch_start_dt to today
+        fetch_start_dt = start_dt - timedelta(days=60)
+        df = yf.download(ticker_list, start=fetch_start_dt.strftime("%Y-%m-%d"), progress=False)
+        
+        if df.empty or 'Close' not in df:
+            return {"status": "error", "message": "No price data found"}
+            
+        close_df = df['Close']
+            
+        dates = [d.strftime("%Y-%m-%d") for d in close_df.index]
+        
+        import pandas as pd
+        # Find the base_date (first date in the index >= start_dt)
+        base_date = None
+        base_index = 0
+        target_ts = pd.Timestamp(start_dt.date())
+        for i, d in enumerate(close_df.index):
+            if d >= target_ts:
+                base_date = d
+                base_index = i
+                break
+                
+        if base_date is None:
+            # Fallback to the last available date if start_dt is in the future
+            base_date = close_df.index[-1]
+            base_index = len(close_df.index) - 1
+            
+        base_date_str = base_date.strftime("%Y-%m-%d")
+        relative_days = [i - base_index for i in range(len(close_df.index))]
+        
+        raw_prices = {}
+        for tk in ticker_list:
+            if tk in close_df:
+                # Get series, drop NAs
+                series = close_df[tk].dropna()
+                if not series.empty:
+                    # Align to the main dates index and forward fill
+                    aligned = series.reindex(close_df.index).fillna(method='ffill').tolist()
+                    raw_prices[tk] = aligned
+                    
+        return {
+            "status": "success",
+            "dates": dates,
+            "relative_days": relative_days,
+            "base_date": base_date_str,
+            "base_index": base_index,
+            "prices": raw_prices
+        }
     except Exception as e:
         import traceback
         traceback.print_exc()

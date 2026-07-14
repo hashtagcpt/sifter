@@ -3,38 +3,40 @@ import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta
 import warnings
+import matplotlib.pyplot as plt
+import argparse
 
 warnings.filterwarnings("ignore")
-from backend.metrics import detrend_and_zscore, calculate_biweekly_probabilities
+from backend.metrics import detrend_and_zscore, calculate_probabilities
 from backend.data_engine import build_universe
 import concurrent.futures
 
-def run_historical_backtest():
-    print("Starting Weekly Backtest over the last 1 year on the full universe...")
+def run_historical_backtest(years=5):
+    print(f"Starting Weekly Backtest over the last {years} years on the full universe...")
     
     print("Fetching expanded ETF universe...")
     universe = build_universe(max_size=250)
     print(f"Universe size: {len(universe)}")
     
     print("Downloading historical data (this may take a minute)...")
-    data = yf.download(universe, period="3y", auto_adjust=True, progress=False)['Close']
+    data = yf.download(universe, period=f"{years + 2}y", auto_adjust=True, progress=False)['Close']
     
     total_days = len(data)
+    required_days = int(years * 252)
     if total_days < 252:
-        print("Not enough data to backtest 1 year.")
+        print("Not enough data to backtest.")
         return
         
-    backtest_start_idx = total_days - 252
+    backtest_start_idx = max(total_days - required_days, 252)
     
     capital = 1000.0
     equity_curve = [capital]
-    dates = []
+    dates = [data.index[backtest_start_idx - 1]]
     
     print("Running weekly simulations...")
     
     for i in range(backtest_start_idx, total_days - 5, 5):
         current_date = data.index[i]
-        dates.append(current_date)
         
         historical_slice = data.iloc[:i]
         
@@ -54,14 +56,14 @@ def run_historical_backtest():
             z = detrend_and_zscore(tk_prices, window=126)
             z_score = z.iloc[-1] if not pd.isna(z.iloc[-1]) else 0.0
             
-            probs = calculate_biweekly_probabilities(tk_prices, horizon_days=14, target_upside=0.05, max_downside=-0.05, n_paths=200) # reduced paths for speed
+            probs = calculate_probabilities(tk_prices, horizon_days=14, target_upside=0.05, max_downside=-0.05, n_paths=200) # reduced paths for speed
             
             # Anti-momentum / Mean-reversion
-            rank_score = (probs["prob_success"] * 10.0) - (float(z_score) * 1.0)
+            raw_rank_score = (probs["prob_success"] * 10.0) - (float(z_score) * 1.0)
             
             return {
                 "ticker": tk,
-                "rank_score": rank_score,
+                "raw_rank_score": raw_rank_score,
                 "prob_success": probs["prob_success"],
                 "z_score": z_score
             }
@@ -73,8 +75,15 @@ def run_historical_backtest():
                 if res is not None:
                     weekly_scores.append(res)
             
+        
+        weekly_scores.sort(key=lambda x: x["raw_rank_score"])
+        n = len(weekly_scores)
+        for idx, res in enumerate(weekly_scores):
+            res["rank_score"] = (idx / max(1, n - 1)) * 100.0 if n > 0 else 50.0
+            
         weekly_scores.sort(key=lambda x: x["rank_score"], reverse=True)
         if not weekly_scores:
+            dates.append(data.index[i+5])
             equity_curve.append(capital)
             continue
             
@@ -120,6 +129,7 @@ def run_historical_backtest():
         trade_pnl = capital * portfolio_return
         capital += trade_pnl
         equity_curve.append(capital)
+        dates.append(data.index[i+5])
         
         print(f"{current_date.date()} | Portfolio: {', '.join(trade_logs)} | 1-Wk Port Ret: {portfolio_return*100:5.2f}% | Capital: ${capital:.2f}")
 
@@ -128,13 +138,25 @@ def run_historical_backtest():
     max_drawdown = (equity_series / equity_series.cummax() - 1).min()
     
     print("\n" + "="*40)
-    print("BACKTEST RESULTS (1 Year)")
+    print(f"BACKTEST RESULTS ({years} Years)")
     print("="*40)
     print(f"Starting Capital : $1000.00")
     print(f"Ending Capital   : ${capital:.2f}")
     print(f"Total Return     : {total_return * 100:.2f}%")
     print(f"Max Drawdown     : {max_drawdown * 100:.2f}%")
     print("="*40)
+    
+    plt.figure(figsize=(12, 6))
+    plt.plot(dates, equity_curve, label='Sifter Strategy', color='#4facfe', linewidth=2)
+    plt.title(f'{years}-Year Backtest (Including 2022 Bear Market)')
+    plt.ylabel('Capital ($)')
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.savefig('static/bear_market_backtest.png', bbox_inches='tight')
+    print("Saved chart to static/bear_market_backtest.png")
 
 if __name__ == "__main__":
-    run_historical_backtest()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--years', type=int, default=5, help='Number of years to backtest')
+    args = parser.parse_args()
+    run_historical_backtest(years=args.years)

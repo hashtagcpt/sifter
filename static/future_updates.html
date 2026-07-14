@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sifter Future Updates</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d0d0d;
+            --surface-color: #1a1a1a;
+            --text-primary: #f8fafc;
+            --text-secondary: #a1a1aa;
+            --accent-color: #4facfe;
+            --accent-hover: #3b8cd7;
+            --success-color: #10b981;
+            --danger-color: #f43f5e;
+            --warning-color: #f59e0b;
+            --border-radius: 8px;
+            --transition: all 0.15s ease-in-out;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .app-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            width: 100%;
+        }
+
+        header {
+            margin-bottom: 40px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .title {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: var(--accent-color);
+            margin-bottom: 8px;
+            letter-spacing: -1px;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            font-weight: 300;
+        }
+
+        h2 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin-top: 40px;
+            margin-bottom: 16px;
+            color: #ffffff;
+        }
+
+        h3 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            color: var(--accent-color);
+        }
+
+        p {
+            margin-bottom: 16px;
+            color: #d1d5db;
+        }
+
+        ul {
+            margin-bottom: 16px;
+            padding-left: 24px;
+            color: #d1d5db;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .glass-panel {
+            background: var(--surface-color);
+            border: 1px solid #333;
+            border-radius: var(--border-radius);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        a {
+            color: var(--accent-color);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .button {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid #333;
+            padding: 8px 16px;
+            border-radius: var(--border-radius);
+            text-decoration: none;
+            transition: var(--transition);
+        }
+
+        .button:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div>
+                <h1 class="title">Future Updates</h1>
+                <p class="subtitle">Research and Brainstormed Strategies for Managing Irrational Exuberance.</p>
+            </div>
+            <a href="/" class="button">Back to Terminal</a>
+        </header>
+
+        <section>
+            <p>While Sifter has been fortified with Dynamic Volatility Targeting and Bayesian Sector Weights, there are multiple additional theories and methodologies we can explore to further protect the system from market bubbles.</p>
+
+            <div class="glass-panel">
+                <h3>1. Quantitative Bubble Detection</h3>
+                <p>Advanced metrics beyond simple trailing volatility to warn of impending corrections:</p>
+                <ul>
+                    <li><strong>Log-Periodic Power Law Singularity (LPPLS) Model:</strong> Designed to detect super-exponential price growth and accelerating oscillations. Integrating this econophysics model would allow Sifter to identify "singularity" points where herd behavior peaks and a crash is mathematically imminent.</li>
+                    <li><strong>Pairwise Correlation Systemic Spikes:</strong> If the rolling cross-sectional correlation of our entire ETF or stock universe spikes above a historical threshold, it typically signals blind market-wide complacency and herding, triggering a de-risking event.</li>
+                    <li><strong>NLP Sentiment Extremes:</strong> Leveraging large language models (LLMs) to perform dimensional sentiment analysis (measuring valence and arousal) on news and social media. When these hit multi-standard-deviation peaks, retail speculative fervor may be maxing out.</li>
+                </ul>
+            </div>
+
+            <div class="glass-panel">
+                <h3>2. Systematic Risk Management</h3>
+                <p>Methods to better adjust position allocations once a bubble is detected:</p>
+                <ul>
+                    <li><strong>Adaptive Stop-Losses / Trailing Exits:</strong> Evolving the GARCH mechanics to implement trailing stops that dynamically tighten as an asset's price accelerates upward. This locks in profits during a run-up so the strategy isn't a forced seller at the bottom.</li>
+                    <li><strong>Regime-Switching Models (HMM):</strong> Training Hidden Markov Models to classify current market regimes (e.g., Bull, Bear, High-Vol, Low-Vol) and automatically pivot capital to defensive sectors (Treasuries, Gold) when it classifies an "Irrational Exuberance Bubble."</li>
+                </ul>
+            </div>
+
+            <div class="glass-panel">
+                <h3>3. Hedging Strategies</h3>
+                <p>Derivatives-based approaches to participate in the upside while protecting the downside:</p>
+                <ul>
+                    <li><strong>Defined Risk Strategies (DRS):</strong> Allocating a minor percentage of portfolio capital to out-of-the-money (OTM) Put options on the SPY whenever valuation scores begin to drop across the broad market.</li>
+                    <li><strong>Options-Based Signal Extraction (Volatility Smile):</strong> Analyzing the price differential between Put and Call options (skew). If OTM puts become excessively expensive relative to calls, it reveals institutional "smart money" hedging activity, triggering Sifter to preemptively reduce exposure.</li>
+                </ul>
+            </div>
+        </section>
+    </div>
+</body>
+</html>

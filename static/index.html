@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <title>Sifter</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
@@ -524,6 +525,11 @@
             <div id="picks-summary" style="margin-bottom: 24px; font-size: 1.1rem; line-height: 1.6; padding: 20px; background: rgba(79, 172, 254, 0.05); border: 1px solid rgba(79, 172, 254, 0.2); border-radius: var(--border-radius); display: none;">
             </div>
             
+            <div id="historical-chart-container" class="glass-panel" style="display: none; padding: 20px; margin-bottom: 24px; position: relative; height: 350px;">
+                <h3 style="margin-bottom: 16px; color: var(--accent-color); font-weight: 600;">To-Date Performance Trend</h3>
+                <canvas id="historical-trend-chart"></canvas>
+            </div>
+            
             <div class="grid grid-cols-3" id="analysis-grid"></div>
         </div>
 
@@ -950,7 +956,13 @@
                                     returnText = `<span style="color: var(--text-muted); margin-left: 8px;">Return: Calculating...</span>`;
                                 }
                             } else {
-                                returnText = `<span style="color: var(--text-muted); margin-left: 8px;">(Holding Period Active: ${item.horizon}d)</span>`;
+                                if (item.realized_return !== null && item.realized_return !== undefined) {
+                                    const retPct = (item.realized_return * 100).toFixed(2);
+                                    const color = item.realized_return >= 0 ? 'var(--success-color)' : 'var(--danger-color)';
+                                    returnText = `<span style="color: var(--text-muted); margin-left: 8px;">(Active: ${item.horizon}d)</span> <span style="color: ${color}; font-weight: bold; margin-left: 8px;">To-Date Return: ${item.realized_return >= 0 ? '+' : ''}${retPct}%</span>`;
+                                } else {
+                                    returnText = `<span style="color: var(--text-muted); margin-left: 8px;">(Holding Period Active: ${item.horizon}d) Return: Calculating...</span>`;
+                                }
                             }
                             
                             return `
@@ -985,6 +997,158 @@
             }
         }
 
+        let trendChart = null;
+        
+        async function renderHistoricalChart(tickers, startDate) {
+            const container = document.getElementById('historical-chart-container');
+            const canvas = document.getElementById('historical-trend-chart');
+            
+            if (trendChart) {
+                trendChart.destroy();
+                trendChart = null;
+            }
+            
+            container.style.display = 'block';
+            
+            try {
+                const res = await fetch(`/api/performance_chart?tickers=${tickers.join(',')}&start_date=${startDate}`);
+                const data = await res.json();
+                
+                if (data.status === 'success' && data.dates && data.prices) {
+                    // Update header with the pick date
+                    let headerEl = document.getElementById('historical-chart-header');
+                    if (!headerEl) {
+                        headerEl = document.createElement('h3');
+                        headerEl.id = 'historical-chart-header';
+                        headerEl.style.marginBottom = '10px';
+                        headerEl.style.color = 'var(--text-primary)';
+                        headerEl.style.textAlign = 'center';
+                        container.insertBefore(headerEl, canvas);
+                    }
+                    headerEl.innerText = `Picks Selected On: ${data.base_date}`;
+                    
+                    const colors = [
+                        'rgba(79, 172, 254, 1)',
+                        'rgba(0, 242, 254, 1)',
+                        'rgba(255, 99, 132, 1)'
+                    ];
+                    
+                    const splitIndex = data.base_index !== undefined ? data.base_index : -1;
+                    
+                    const datasets = Object.keys(data.prices).map((tk, idx) => ({
+                        label: tk,
+                        data: data.prices[tk],
+                        borderColor: colors[idx % colors.length],
+                        backgroundColor: colors[idx % colors.length].replace('1)', '0.1)'),
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        fill: false,
+                        tension: 0.1,
+                        segment: {
+                            borderDash: ctx => ctx.p0DataIndex < splitIndex ? [5, 5] : undefined
+                        }
+                    }));
+                    
+                    const verticalLinePlugin = {
+                        id: 'verticalLine',
+                        beforeDraw: (chart) => {
+                            if (splitIndex !== -1) {
+                                const ctx = chart.ctx;
+                                const x = chart.scales.x.getPixelForTick(splitIndex);
+                                const top = chart.scales.y.top;
+                                const bottom = chart.scales.y.bottom;
+                                
+                                ctx.save();
+                                ctx.beginPath();
+                                ctx.moveTo(x, top);
+                                ctx.lineTo(x, bottom);
+                                ctx.lineWidth = 2;
+                                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                                ctx.setLineDash([5, 5]);
+                                ctx.stroke();
+                                
+                                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                                ctx.font = '12px Arial';
+                                ctx.textAlign = 'right';
+                                ctx.fillText("Model Pick ", x - 5, top + 15);
+                                ctx.restore();
+                            }
+                        }
+                    };
+                    
+                    trendChart = new Chart(canvas, {
+                        type: 'line',
+                        data: {
+                            labels: data.relative_days,
+                            datasets: datasets
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    labels: { color: 'rgba(255, 255, 255, 0.7)' }
+                                },
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false,
+                                    callbacks: {
+                                        title: function(tooltipItems) {
+                                            // Show actual date in the tooltip instead of integer day
+                                            const index = tooltipItems[0].dataIndex;
+                                            return data.dates[index];
+                                        },
+                                        label: function(context) {
+                                            let label = context.dataset.label || '';
+                                            if (label) {
+                                                label += ': ';
+                                            }
+                                            if (context.parsed.y !== null) {
+                                                label += '$' + context.parsed.y.toFixed(2);
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                }
+                            },
+                            interaction: {
+                                mode: 'nearest',
+                                axis: 'x',
+                                intersect: false
+                            },
+                            scales: {
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: 'Days Since Pick',
+                                        color: 'rgba(255, 255, 255, 0.7)'
+                                    },
+                                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                    ticks: { color: 'rgba(255, 255, 255, 0.5)' }
+                                },
+                                y: {
+                                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                    ticks: {
+                                        color: 'rgba(255, 255, 255, 0.5)',
+                                        callback: function(value) {
+                                            return '$' + value;
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        plugins: [verticalLinePlugin]
+                    });
+                } else {
+                    container.style.display = 'none';
+                }
+            } catch(e) {
+                console.error("Error fetching performance chart", e);
+                container.style.display = 'none';
+            }
+        }
+
         async function loadHistoricalRun(filename) {
             const grid = document.getElementById('analysis-grid');
             grid.innerHTML = '<div class="text-muted" style="grid-column: 1/-1; text-align: center; padding: 40px;">Loading historical data...</div>';
@@ -996,6 +1160,11 @@
                     if (data.macroScores) state.macroScores = data.macroScores;
                     switchTab('dashboard');
                     renderDashboard();
+                    
+                    if (data.analysis.length > 0 && data.timestamp) {
+                        const top3 = data.analysis.slice(0, 3).map(a => a.ticker);
+                        renderHistoricalChart(top3, data.timestamp);
+                    }
                     
                     // Show report button and configure it to generate report for this loaded run
                     const reportBtn = document.getElementById('btn-latest-report');
@@ -1196,6 +1365,15 @@
                 window._supplementaryLoaded = true;
                 loadSupplementaryData();
             }
+            
+            // Hide and clean up the historical chart if it exists
+            const chartContainer = document.getElementById('historical-chart-container');
+            if (chartContainer) chartContainer.style.display = 'none';
+            if (typeof trendChart !== 'undefined' && trendChart) {
+                trendChart.destroy();
+                trendChart = null;
+            }
+            
             document.getElementById('analysis-grid').innerHTML = '';
             const loadingIndicator = document.getElementById('loading-indicator');
             const statusText = document.getElementById('loading-status-text');
@@ -1394,30 +1572,19 @@
                 const analystScore = (item.analyst_ratings?.buy || 0) + (item.analyst_ratings?.strongBuy || 0);
                 const probSuccess = item.biweekly_probs?.prob_success || 0.0;
                 
-                item.raw_rank_score = (item.value_score * w.val) + 
+                item.raw_rank_score = (item.value_score * w.val) - 
                                   (item.z_score * w.trend) + 
                                   (analystScore * w.analyst) + 
-                                  (probSuccess * w.garch) + 
+                                  (probSuccess * w.garch * 10.0) + 
                                   (mScore * w.macro);
                 item.macro_ai_score = mScore;
             });
 
-            // Normalize rank scores to 0-100
-            let maxRaw = -Infinity;
-            let minRaw = Infinity;
-            state.analysis.forEach(item => {
-                if (!isNaN(item.raw_rank_score)) {
-                    if (item.raw_rank_score > maxRaw) maxRaw = item.raw_rank_score;
-                    if (item.raw_rank_score < minRaw) minRaw = item.raw_rank_score;
-                }
-            });
-            const range = maxRaw - minRaw || 1;
-            state.analysis.forEach(item => {
-                if (!isNaN(item.raw_rank_score)) {
-                    item.rank_score = ((item.raw_rank_score - minRaw) / range) * 100;
-                } else {
-                    item.rank_score = 0;
-                }
+            // Normalize rank scores to 0-100 using Percentile Rank (Robust scaling)
+            const sortedByRaw = [...state.analysis].sort((a, b) => (a.raw_rank_score || 0) - (b.raw_rank_score || 0));
+            const n = sortedByRaw.length;
+            sortedByRaw.forEach((item, index) => {
+                item.rank_score = n > 1 ? (index / (n - 1)) * 100 : 50;
             });
 
             // Filter out any stocks with NaN scores or empty data
@@ -1556,19 +1723,19 @@
                     <div class="grid" style="grid-template-columns:1fr 1fr 1fr 1fr; gap:12px; margin-bottom:16px;">
                       <div class="metric-card" style="padding: 12px;">
                         <div class="text-muted" style="font-size:0.75em; margin-bottom: 4px;">RV (21d)</div>
-                        <div class="font-bold" style="font-size: 1.1em;">${(item.rv * 100).toFixed(1)}%</div>
+                        <div class="font-bold" style="font-size: 1.1em;">${item.rv !== undefined ? (item.rv * 100).toFixed(1) + '%' : 'N/A'}</div>
                       </div>
                       <div class="metric-card" style="padding: 12px;">
                         <div class="text-muted" style="font-size:0.75em; margin-bottom: 4px;">ATR (14d)</div>
-                        <div class="font-bold" style="font-size: 1.1em;">${item.atr.toFixed(2)}</div>
+                        <div class="font-bold" style="font-size: 1.1em;">${item.atr !== undefined ? item.atr.toFixed(2) : 'N/A'}</div>
                       </div>
                       <div class="metric-card" style="padding: 12px;">
                         <div class="text-muted" style="font-size:0.75em; margin-bottom: 4px;">HV Rank</div>
-                        <div class="font-bold" style="font-size: 1.1em;">${item.hv_rank.toFixed(0)}</div>
+                        <div class="font-bold" style="font-size: 1.1em;">${item.hv_rank !== undefined ? item.hv_rank.toFixed(0) : 'N/A'}</div>
                       </div>
                       <div class="metric-card" style="padding: 12px;">
                         <div class="text-muted" style="font-size:0.75em; margin-bottom: 4px;">Current IV</div>
-                        <div class="font-bold" style="font-size: 1.1em;">${(item.current_iv * 100).toFixed(1)}%</div>
+                        <div class="font-bold" style="font-size: 1.1em;">${item.current_iv !== undefined ? (item.current_iv * 100).toFixed(1) + '%' : 'N/A'}</div>
                       </div>
                     </div>
                     <hr style="border:0; border-top:1px solid rgba(255,255,255,0.05); margin:20px 0;" />

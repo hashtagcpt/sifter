@@ -6,8 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 import warnings
 
 warnings.filterwarnings("ignore")
-from backend.metrics import detrend_and_zscore, calculate_biweekly_probabilities
-from backend.data_engine import build_universe
+from backend.metrics import detrend_and_zscore, calculate_probabilities
+from backend.data_engine import build_universe, load_sector_index
 
 TRANSACTION_COST = 0.002   # 0.2% round-trip (0.1% each side)
 PORTFOLIO_SIZE   = 3
@@ -148,6 +148,11 @@ def run_custom_backtest(
     trades         = []
     weekly_returns = []
 
+    # Initialize Bayesian sector weights
+    sector_idx = load_sector_index()
+    all_sectors = set(sector_idx.values()) | {"Unknown Sector"}
+    sector_priors = {sec: 1.0 for sec in all_sectors}
+
     with ThreadPoolExecutor(max_workers=8) as pool:
         for i in range(backtest_start_idx, total_days - 5, 5):
             _progress["step"] += 1
@@ -162,19 +167,31 @@ def run_custom_backtest(
                     return None
                 z = detrend_and_zscore(prices, window=126)
                 zv = float(z.iloc[-1]) if not pd.isna(z.iloc[-1]) else 0.0
-                probs = calculate_biweekly_probabilities(
+                probs = calculate_probabilities(
                     prices, horizon_days=horizon_days,
                     target_upside=target_upside, max_downside=max_downside,
                     n_paths=100,
                 )
                 return {
                     "ticker":       tk,
-                    "rank_score":   probs["prob_success"] * 10.0 - zv * 0.5,
+                    "raw_rank_score":   probs["prob_success"] * 10.0 - zv * 0.5,
                     "prob_success": probs["prob_success"],
                     "z_score":      zv,
                 }
 
             scored = [r for r in pool.map(score_ticker, universe) if r]
+            
+            # Apply Bayesian sector prior weighting
+            for item in scored:
+                sec = sector_idx.get(item["ticker"], "Unknown Sector")
+                prior = sector_priors.get(sec, 1.0)
+                item["raw_rank_score"] *= prior
+                
+            scored.sort(key=lambda x: x["raw_rank_score"])
+            n = len(scored)
+            for i, res in enumerate(scored):
+                res["rank_score"] = (i / max(1, n - 1)) * 100.0 if n > 0 else 50.0
+                
             scored.sort(key=lambda x: x["rank_score"], reverse=True)
 
             if not scored:
@@ -211,8 +228,18 @@ def run_custom_backtest(
             tot_w    = sum(raw_w.values())
             weights  = {tk: w / tot_w for tk, w in raw_w.items()}
 
+            # Dynamic Volatility Targeting based on SPY
+            exposure = 1.0
+            if spy_series is not None and i >= 60:
+                spy_recent = spy_series.iloc[i-60:i].pct_change().dropna()
+                spy_vol = spy_recent.std() * np.sqrt(252)
+                # Scale exposure down when volatility exceeds 15% (0.15)
+                # Reaches 0 exposure at 30% vol (0.30)
+                exposure = max(0.0, min(1.0, 1.0 - (spy_vol - 0.15) / 0.15))
+
             port_ret   = 0.0
             trade_logs = []
+            sector_returns = {}
             for tk in portfolio:
                 try:
                     entry = float(data[tk].iloc[i])
@@ -222,8 +249,25 @@ def run_custom_backtest(
                     port_ret += ret * w
                     trade_logs.append({"ticker": tk, "weight": round(w, 3),
                                         "entry": entry, "exit": exit_, "return": ret})
+                    sec = sector_idx.get(tk, "Unknown Sector")
+                    if sec not in sector_returns:
+                        sector_returns[sec] = []
+                    sector_returns[sec].append(ret)
                 except Exception:
                     pass
+
+            # Apply exposure targeting (remaining capital is in cash, earning 0%)
+            port_ret *= exposure
+
+            # Bayesian Update of Sector Priors
+            if spy_series is not None and spy_entry:
+                spy_entry_step = float(spy_series.iloc[i])
+                spy_exit_step = float(spy_series.iloc[i + 5])
+                spy_ret = spy_exit_step / spy_entry_step - 1.0
+                for sec, rets in sector_returns.items():
+                    sec_avg_ret = float(np.mean(rets))
+                    new_prior = sector_priors[sec] * (1.0 + 5.0 * (sec_avg_ret - spy_ret))
+                    sector_priors[sec] = max(0.5, min(2.0, new_prior))
 
             capital *= (1.0 + port_ret)
             weekly_returns.append(port_ret)
