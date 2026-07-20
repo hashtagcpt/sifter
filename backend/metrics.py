@@ -175,9 +175,9 @@ def generate_rationale(ticker: str, value_score: float, z_score: float, analyst_
 
 def calculate_probabilities(
     prices: pd.Series, 
-    horizon_days: int = 14, 
-    target_upside: float = 0.05, 
-    max_downside: float = -0.05,
+    horizon_days: int = 120, 
+    target_upside: float = 0.15, 
+    max_downside: float = -0.15,
     n_paths: int = 1000,
     method: str = "garch"
 ) -> dict:

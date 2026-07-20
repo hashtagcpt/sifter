@@ -110,9 +110,9 @@ def _calmar(total_return: float, max_drawdown: float, period_years: float) -> fl
 
 def run_custom_backtest(
     max_size: int   = 50,
-    horizon_days: int = 14,
-    target_upside: float = 0.05,
-    max_downside: float  = -0.05,
+    horizon_days: int = 120,
+    target_upside: float = 0.15,
+    max_downside: float  = -0.15,
     period_years: int    = 1,
 ) -> dict:
 
@@ -133,7 +133,7 @@ def run_custom_backtest(
         return {"error": "Not enough historical data to backtest."}
 
     backtest_start_idx = max(total_days - (period_years * 252), 252)
-    total_steps        = max(1, (total_days - backtest_start_idx - 5) // 5)
+    total_steps        = max(1, (total_days - backtest_start_idx - 20) // 20)
 
     # Initialise progress
     _progress.update({"running": True, "step": 0,
@@ -154,18 +154,18 @@ def run_custom_backtest(
     sector_priors = {sec: 1.0 for sec in all_sectors}
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for i in range(backtest_start_idx, total_days - 5, 5):
+        for i in range(backtest_start_idx, total_days - 20, 20):
             _progress["step"] += 1
 
             hist   = data.iloc[:i]
-            recent = hist[universe].iloc[-60:].pct_change().dropna()
+            recent = hist[universe].iloc[-120:].pct_change().dropna()
             corr   = recent.corr()
 
             def score_ticker(tk, _h=hist):
                 prices = _h[tk].dropna()
                 if len(prices) < 252:
                     return None
-                z = detrend_and_zscore(prices, window=126)
+                z = detrend_and_zscore(prices, window=252)
                 zv = float(z.iloc[-1]) if not pd.isna(z.iloc[-1]) else 0.0
                 probs = calculate_probabilities(
                     prices, horizon_days=horizon_days,
@@ -189,15 +189,15 @@ def run_custom_backtest(
                 
             scored.sort(key=lambda x: x["raw_rank_score"])
             n = len(scored)
-            for i, res in enumerate(scored):
-                res["rank_score"] = (i / max(1, n - 1)) * 100.0 if n > 0 else 50.0
+            for idx, res in enumerate(scored):
+                res["rank_score"] = (idx / max(1, n - 1)) * 100.0 if n > 0 else 50.0
                 
             scored.sort(key=lambda x: x["rank_score"], reverse=True)
 
             if not scored:
                 if spy_series is not None and spy_entry:
-                    spy_capital = 1000.0 * float(spy_series.iloc[i + 5]) / spy_entry
-                equity_curve.append({"date": str(data.index[i + 5].date()),
+                    spy_capital = 1000.0 * float(spy_series.iloc[i + 20]) / spy_entry
+                equity_curve.append({"date": str(data.index[i + 20].date()),
                                       "capital": capital, "spy": spy_capital})
                 continue
 
@@ -243,7 +243,7 @@ def run_custom_backtest(
             for tk in portfolio:
                 try:
                     entry = float(data[tk].iloc[i])
-                    exit_ = float(data[tk].iloc[i + 5])
+                    exit_ = float(data[tk].iloc[i + 20])
                     ret   = (exit_ / entry - 1.0 - TRANSACTION_COST) if entry > 0 else 0.0
                     w     = weights[tk]
                     port_ret += ret * w
@@ -262,7 +262,7 @@ def run_custom_backtest(
             # Bayesian Update of Sector Priors
             if spy_series is not None and spy_entry:
                 spy_entry_step = float(spy_series.iloc[i])
-                spy_exit_step = float(spy_series.iloc[i + 5])
+                spy_exit_step = float(spy_series.iloc[i + 20])
                 spy_ret = spy_exit_step / spy_entry_step - 1.0
                 for sec, rets in sector_returns.items():
                     sec_avg_ret = float(np.mean(rets))
@@ -273,9 +273,9 @@ def run_custom_backtest(
             weekly_returns.append(port_ret)
 
             if spy_series is not None and spy_entry:
-                spy_capital = 1000.0 * float(spy_series.iloc[i + 5]) / spy_entry
+                spy_capital = 1000.0 * float(spy_series.iloc[i + 20]) / spy_entry
 
-            equity_curve.append({"date": str(data.index[i + 5].date()),
+            equity_curve.append({"date": str(data.index[i + 20].date()),
                                    "capital": capital, "spy": spy_capital})
             trades.append({"date": str(data.index[i].date()),
                             "portfolio": trade_logs,

@@ -63,6 +63,50 @@ def get_tickers_from_stockanalysis_holdings(url: str) -> List[str]:
         print(f"Error fetching from {url}: {e}")
         return []
 
+# Low-fee broad-market / style ETFs (Vanguard, iShares) and defense/aerospace names that
+# never appear via the S&P500/Dow/Nasdaq100/Russell1000 index scrapes below.
+SUPPLEMENTAL_TICKERS = [
+    # Broad market
+    "VTI", "VOO", "SPLG", "ITOT", "IVV",
+    # Vanguard style/factor
+    "VUG", "VTV", "VIG", "VYM", "VB", "VXUS",
+    # iShares style/factor
+    "IWM", "IWF", "IWD",
+    # Defense & Aerospace ETFs
+    "ITA", "PPA", "XAR", "SHLD",
+    # Defense & Aerospace primes
+    "LMT", "RTX", "NOC", "GD", "LHX", "HII", "TXT", "KTOS", "AVAV",
+]
+
+# Sector overrides applied ahead of yfinance's own `.info["sector"]` in get_fundamental_metrics().
+# ETFs never get a sector from yfinance at all; the defense primes do (usually "Industrials"),
+# so this has to win over yfinance rather than just filling a gap.
+MANUAL_SECTOR_OVERRIDES = {
+    ticker: "ETF" for ticker in [
+        "VTI", "VOO", "SPLG", "ITOT", "IVV",
+        "VUG", "VTV", "VIG", "VYM", "VB", "VXUS",
+        "IWM", "IWF", "IWD",
+    ]
+}
+MANUAL_SECTOR_OVERRIDES.update({
+    ticker: "Defense & Aerospace" for ticker in [
+        "ITA", "PPA", "XAR", "SHLD",
+        "LMT", "RTX", "NOC", "GD", "LHX", "HII", "TXT", "KTOS", "AVAV",
+    ]
+})
+
+
+def _merge_supplemental(tickers: List[str]) -> List[str]:
+    """Dedupe-preserving-order union of `tickers` with SUPPLEMENTAL_TICKERS."""
+    seen = set(tickers)
+    merged = list(tickers)
+    for t in SUPPLEMENTAL_TICKERS:
+        if t not in seen:
+            seen.add(t)
+            merged.append(t)
+    return merged
+
+
 def build_universe(max_size: int = 2500, force_scrape: bool = False) -> List[str]:
     """
     Build stock universe by scraping major indices from Wikipedia.
@@ -73,11 +117,17 @@ def build_universe(max_size: int = 2500, force_scrape: bool = False) -> List[str
     import json
     import io
     import requests
-    
+
     if not force_scrape:
         cached = get_universe()
         if cached and len(cached) > 3:
-            return cached[:max_size]
+            merged = _merge_supplemental(cached)
+            if len(merged) != len(cached):
+                try:
+                    save_universe(merged)
+                except Exception as e:
+                    print(f"Failed to save merged universe cache: {e}")
+            return merged[:max_size]
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -118,7 +168,9 @@ def build_universe(max_size: int = 2500, force_scrape: bool = False) -> List[str
     if not cleaned:
         # Ultimate fallback - do NOT cache this!
         return ["AAPL", "MSFT", "GOOGL"][:max_size]
-        
+
+    cleaned = _merge_supplemental(cleaned)
+
     try:
         save_universe(cleaned)
     except Exception as e:
@@ -261,7 +313,7 @@ def get_fundamental_metrics(ticker: str) -> dict:
         tk = yf.Ticker(ticker)
         info = tk.info
         
-        sec = info.get("sector")
+        sec = MANUAL_SECTOR_OVERRIDES.get(ticker) or info.get("sector")
         if not sec and ticker in idx and idx[ticker] != "Unknown Sector":
             sec = idx[ticker]
         elif not sec:

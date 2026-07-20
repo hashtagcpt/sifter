@@ -410,6 +410,7 @@
                         <a href="#" onclick="switchTab('stat-arb'); document.getElementById('btn-tools-dropdown').classList.add('active'); return false;">Stat-Arb / Pairs</a>
                         <a href="#" onclick="switchTab('backtest'); document.getElementById('btn-tools-dropdown').classList.add('active'); return false;">Vectorized Backtesting</a>
                         <a href="#" onclick="switchTab('portfolio-finder'); document.getElementById('btn-tools-dropdown').classList.add('active'); return false;">Portfolio Finder</a>
+                        <a href="#" onclick="switchTab('my-portfolio'); document.getElementById('btn-tools-dropdown').classList.add('active'); loadPortfolioList(); return false;">My Portfolio</a>
                     </div>
                 </div>
 
@@ -673,10 +674,37 @@
                 <h2 class="mb-4" style="font-weight: 600;">Top Sortino Baskets</h2>
                 <p class="text-muted mb-4">Uses a Monte Carlo Search algorithm to find 5 non-overlapping baskets of 5 stocks that maximized their Sortino Ratio over the last month.</p>
                 <div class="flex gap-4 mb-4 items-center">
-                    <button class="button" onclick="findSortinoBaskets()" style="background: var(--accent-color);">Find Best Baskets</button>
+                    <button class="button" onclick="findSortinoBaskets(event)" style="background: var(--accent-color);">Find Best Baskets</button>
                 </div>
                 <div id="portfolio-finder-results" style="margin-top: 20px;"></div>
             </div>
+        </div>
+        <!-- My Portfolio Tab -->
+        <div id="my-portfolio" class="tab-content">
+            <div class="glass-panel mb-4">
+                <h2 class="mb-4" style="font-weight: 600;">My Portfolio</h2>
+                <p class="text-muted mb-4">Enter your real holdings (ticker, shares, and cost basis) to save a portfolio and compute its historical and forward-looking metrics.</p>
+
+                <div class="flex gap-4 mb-4 items-center flex-wrap">
+                    <select id="portfolio-select" style="padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: white;" onchange="selectPortfolio(this.value)">
+                        <option value="">-- New Portfolio --</option>
+                    </select>
+                    <input type="text" id="portfolio-name-input" placeholder="Portfolio name (e.g. Retirement)" style="padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: white;">
+                    <button class="button outline" onclick="newPortfolio()">New Portfolio</button>
+                    <button class="button outline" onclick="deleteCurrentPortfolio()" id="btn-delete-portfolio" style="display: none; border-color: var(--danger-color); color: var(--danger-color);">Delete</button>
+                </div>
+
+                <div id="portfolio-holdings-editor" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;"></div>
+                <button class="button outline" onclick="addHoldingRow()" style="margin-bottom: 20px;">+ Add Holding</button>
+
+                <div class="flex gap-4">
+                    <button class="button" onclick="savePortfolio()" style="background: var(--accent-color);">Save Portfolio</button>
+                    <button class="button" onclick="analyzePortfolio()" style="background: #3b82f6;">Analyze Portfolio</button>
+                </div>
+                <div id="portfolio-msg" style="margin-top: 12px;"></div>
+            </div>
+
+            <div id="portfolio-analysis-results"></div>
         </div>
     </div>
 
@@ -732,7 +760,9 @@
                 analyst: 0.05,
                 garch: 10.0,
                 macro: 2.0
-            }
+            },
+            portfolios: [],
+            currentPortfolio: { id: null, name: '', holdings: [] }
         };
         const state = window.state;
 
@@ -901,7 +931,7 @@
 
             try {
                 // Load the universe and latest run on boot per user requirements
-                const uRes = await fetch('/api/universe', {
+                const uRes = await fetch('/api/universe/build', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ "max_size": 2500 })
@@ -1394,7 +1424,7 @@
             if (!ollamaModel) ollamaModel = "gemma4:e4b";
 
             try {
-                const uRes = await fetch('/api/universe', {
+                const uRes = await fetch('/api/universe/build', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ "max_size": 2500 })
@@ -1470,9 +1500,14 @@
                 const histData = await histRes.json();
                 if (histData.status === 'success') {
                     // Trigger LLM report generation asynchronously without blocking the UI
-                    document.getElementById('btn-latest-report').style.display = 'none';
+                    const reportBtnEl = document.getElementById('btn-latest-report');
+                    // Clear any stale onclick handler left over from a previously loaded
+                    // historical run (see loadHistoricalRun) so this button always reflects
+                    // the run that was just completed, not an older one.
+                    reportBtnEl.onclick = null;
+                    reportBtnEl.style.display = 'none';
                     document.getElementById('btn-latest-report-loading').style.display = 'block';
-                    
+
                         fetch('/api/generate_report', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -1483,11 +1518,12 @@
                             })
                         }).then(() => {
                         document.getElementById('btn-latest-report-loading').style.display = 'none';
-                        document.getElementById('btn-latest-report').style.display = 'block';
-                        document.getElementById('btn-latest-report').innerText = 'View Model Report';
+                        reportBtnEl.style.display = 'block';
+                        reportBtnEl.innerText = 'View Model Report';
                     }).catch(e => {
                         console.error('Error generating report:', e);
                         document.getElementById('btn-latest-report-loading').style.display = 'none';
+                        reportBtnEl.style.display = 'block';
                     });
                 }
                 
@@ -1871,23 +1907,23 @@
             } catch (e) { console.error(e); }
         }
 
-        async function findSortinoBaskets() {
-            const btn = event.target;
+        async function findSortinoBaskets(event) {
+            const btn = event.currentTarget;
             btn.innerText = "Searching (This takes ~5-10s)...";
             btn.disabled = true;
             const resDiv = document.getElementById('portfolio-finder-results');
             resDiv.innerHTML = "<div class='loader'></div>";
-            
+
             try {
                 const res = await fetch('/api/sortino_baskets');
                 const data = await res.json();
-                
+
                 if (data.status === 'success') {
-                    let html = '<div class="grid">';
+                    let html = '<div class="grid grid-cols-3">';
                     data.baskets.forEach((b, i) => {
                         html += `
-                            <div class="card">
-                                <h3>Basket ${i+1}</h3>
+                            <div class="glass-panel">
+                                <h3 style="margin-bottom: 12px; color: var(--accent-color);">Basket ${i+1}</h3>
                                 <p><strong>Tickers:</strong> ${b.tickers.join(', ')}</p>
                                 <p><strong>Sortino Ratio:</strong> ${b.metrics.sortino_ratio.toFixed(2)}</p>
                                 <p><strong>1mo Return:</strong> ${(b.metrics.total_return * 100).toFixed(2)}%</p>
@@ -1964,6 +2000,306 @@
             
             btn.disabled = false;
             btn.innerText = "Add Ticker";
+        }
+
+        // --- My Portfolio ---
+
+        async function loadPortfolioList() {
+            const select = document.getElementById('portfolio-select');
+            try {
+                const res = await fetch('/api/portfolios');
+                const data = await res.json();
+                state.portfolios = (data.status === 'success' && data.portfolios) ? data.portfolios : [];
+            } catch (e) {
+                state.portfolios = [];
+            }
+
+            const currentId = state.currentPortfolio.id;
+            select.innerHTML = '<option value="">-- New Portfolio --</option>' +
+                state.portfolios.map(p => `<option value="${p.id}">${escapeHtml(p.name)} (${p.holding_count})</option>`).join('');
+            select.value = currentId || '';
+        }
+
+        function newPortfolio() {
+            state.currentPortfolio = { id: null, name: '', holdings: [] };
+            document.getElementById('portfolio-name-input').value = '';
+            document.getElementById('portfolio-select').value = '';
+            document.getElementById('btn-delete-portfolio').style.display = 'none';
+            document.getElementById('portfolio-analysis-results').innerHTML = '';
+            document.getElementById('portfolio-msg').innerHTML = '';
+            renderPortfolioEditor();
+        }
+
+        async function selectPortfolio(id) {
+            if (!id) {
+                newPortfolio();
+                return;
+            }
+            document.getElementById('portfolio-analysis-results').innerHTML = '';
+            document.getElementById('portfolio-msg').innerHTML = '<span class="text-muted">Loading portfolio...</span>';
+            try {
+                const res = await fetch(`/api/portfolio/${id}`);
+                const data = await res.json();
+                if (data.status === 'success') {
+                    state.currentPortfolio = {
+                        id: data.portfolio.id,
+                        name: data.portfolio.name,
+                        holdings: data.portfolio.holdings.map(h => ({
+                            ticker: h.ticker, shares: h.shares,
+                            cost_basis: h.cost_basis, purchase_date: h.purchase_date
+                        }))
+                    };
+                    document.getElementById('portfolio-name-input').value = data.portfolio.name;
+                    document.getElementById('btn-delete-portfolio').style.display = 'inline-flex';
+                    document.getElementById('portfolio-msg').innerHTML = '';
+                    renderPortfolioEditor();
+                } else {
+                    document.getElementById('portfolio-msg').innerHTML = `<span class="text-danger">${data.message}</span>`;
+                }
+            } catch (e) {
+                document.getElementById('portfolio-msg').innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+            }
+        }
+
+        function addHoldingRow() {
+            state.currentPortfolio.holdings.push({ ticker: '', shares: '', cost_basis: '', purchase_date: '' });
+            renderPortfolioEditor();
+        }
+
+        function removeHoldingRow(idx) {
+            state.currentPortfolio.holdings.splice(idx, 1);
+            renderPortfolioEditor();
+        }
+
+        function updateHoldingField(idx, field, value) {
+            state.currentPortfolio.holdings[idx][field] = value;
+        }
+
+        function renderPortfolioEditor() {
+            const container = document.getElementById('portfolio-holdings-editor');
+            const holdings = state.currentPortfolio.holdings;
+            if (holdings.length === 0) {
+                container.innerHTML = '<div class="text-muted">No holdings yet. Click "+ Add Holding" to start.</div>';
+                return;
+            }
+            const inputStyle = "padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: white;";
+            container.innerHTML = holdings.map((h, idx) => `
+                <div class="flex gap-4 items-center">
+                    <input type="text" placeholder="Ticker" value="${escapeHtml(h.ticker)}" style="${inputStyle} width: 100px;" oninput="updateHoldingField(${idx}, 'ticker', this.value)">
+                    <input type="number" placeholder="Shares" value="${h.shares}" step="0.0001" style="${inputStyle} width: 100px;" oninput="updateHoldingField(${idx}, 'shares', this.value)">
+                    <input type="number" placeholder="Cost basis / share" value="${h.cost_basis ?? ''}" step="0.01" style="${inputStyle} width: 150px;" oninput="updateHoldingField(${idx}, 'cost_basis', this.value)">
+                    <input type="date" value="${h.purchase_date ?? ''}" style="${inputStyle}" oninput="updateHoldingField(${idx}, 'purchase_date', this.value)">
+                    <button class="button outline" onclick="removeHoldingRow(${idx})" style="padding: 8px 12px; border-color: var(--danger-color); color: var(--danger-color);">Remove</button>
+                </div>
+            `).join('');
+        }
+
+        function _buildPortfolioPayloadHoldings() {
+            return state.currentPortfolio.holdings
+                .filter(h => h.ticker && h.ticker.trim() && h.shares && parseFloat(h.shares) > 0)
+                .map(h => ({
+                    ticker: h.ticker.trim().toUpperCase(),
+                    shares: parseFloat(h.shares),
+                    cost_basis: (h.cost_basis !== '' && h.cost_basis !== null && h.cost_basis !== undefined) ? parseFloat(h.cost_basis) : null,
+                    purchase_date: h.purchase_date || null
+                }));
+        }
+
+        async function savePortfolio() {
+            const msg = document.getElementById('portfolio-msg');
+            const name = document.getElementById('portfolio-name-input').value.trim();
+            if (!name) {
+                msg.innerHTML = '<span class="text-danger">Please enter a portfolio name.</span>';
+                return;
+            }
+            const holdings = _buildPortfolioPayloadHoldings();
+            if (holdings.length === 0) {
+                msg.innerHTML = '<span class="text-danger">Add at least one holding with a ticker and share count.</span>';
+                return;
+            }
+
+            msg.innerHTML = '<span class="text-muted">Saving...</span>';
+            try {
+                const res = await fetch('/api/portfolio', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ portfolio_id: state.currentPortfolio.id, name, holdings })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    state.currentPortfolio.id = data.portfolio_id;
+                    state.currentPortfolio.name = name;
+                    document.getElementById('btn-delete-portfolio').style.display = 'inline-flex';
+                    msg.innerHTML = '<span class="text-success">Portfolio saved.</span>';
+                    await loadPortfolioList();
+                } else {
+                    msg.innerHTML = `<span class="text-danger">${data.message}</span>`;
+                }
+            } catch (e) {
+                msg.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function deleteCurrentPortfolio() {
+            if (!state.currentPortfolio.id) return;
+            if (!confirm(`Delete portfolio "${state.currentPortfolio.name}"? This cannot be undone.`)) return;
+
+            try {
+                await fetch(`/api/portfolio/${state.currentPortfolio.id}`, { method: 'DELETE' });
+                newPortfolio();
+                await loadPortfolioList();
+            } catch (e) {
+                document.getElementById('portfolio-msg').innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function analyzePortfolio() {
+            const resultsDiv = document.getElementById('portfolio-analysis-results');
+            const msg = document.getElementById('portfolio-msg');
+
+            if (!state.currentPortfolio.id) {
+                msg.innerHTML = '<span class="text-danger">Save the portfolio before analyzing it.</span>';
+                return;
+            }
+
+            resultsDiv.innerHTML = '<div class="loader"></div>';
+            msg.innerHTML = '';
+            try {
+                const res = await fetch(`/api/portfolio/${state.currentPortfolio.id}/analyze`);
+                const data = await res.json();
+                if (data.status === 'success') {
+                    renderPortfolioAnalysis(data);
+                } else {
+                    resultsDiv.innerHTML = `<div class="text-danger">${data.message}</div>`;
+                }
+            } catch (e) {
+                resultsDiv.innerHTML = `<div class="text-danger">Error: ${e.message}</div>`;
+            }
+        }
+
+        function renderPortfolioAnalysis(data) {
+            const resultsDiv = document.getElementById('portfolio-analysis-results');
+            const fmtPct = (v) => v === null || v === undefined ? 'N/A' : `${(v * 100).toFixed(2)}%`;
+            const fmtUsd = (v) => v === null || v === undefined ? 'N/A' : `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            const pnlColor = (v) => (v === null || v === undefined) ? 'var(--text-secondary)' : (v >= 0 ? 'var(--success-color)' : 'var(--danger-color)');
+
+            let excludedHtml = '';
+            if (data.excluded && data.excluded.length > 0) {
+                excludedHtml = `<div class="rationale-box sentiment-note" style="border-left-color: var(--warning-color);">
+                    Excluded from analysis (no price data available): ${data.excluded.map(e => `${escapeHtml(e.ticker)} (${escapeHtml(e.reason)})`).join(', ')}
+                </div>`;
+            }
+
+            const summaryHtml = `
+                <div class="glass-panel mb-4">
+                    <div class="grid grid-cols-3">
+                        <div class="metric-card">
+                            <div class="text-muted">Total Market Value</div>
+                            <div style="font-size: 1.5rem;">${fmtUsd(data.total_market_value)}</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="text-muted">Total Cost Basis</div>
+                            <div style="font-size: 1.5rem;">${data.has_full_cost_basis ? fmtUsd(data.total_cost_basis) : 'N/A (missing on some holdings)'}</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="text-muted">Unrealized P&amp;L</div>
+                            <div style="font-size: 1.5rem; color: ${pnlColor(data.total_unrealized_pnl)}">
+                                ${data.has_full_cost_basis ? `${fmtUsd(data.total_unrealized_pnl)} (${fmtPct(data.total_unrealized_pnl_pct)})` : 'N/A'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            let historicalHtml = '';
+            if (data.historical) {
+                const m = data.historical.metrics;
+                const constrained = data.historical.constraining_tickers && data.historical.constraining_tickers.length > 0
+                    ? `<div class="text-muted" style="font-size: 0.85em; margin-top: 8px;">Limited by ${data.historical.constraining_tickers.join(', ')}'s shorter trading history.</div>`
+                    : '';
+                historicalHtml = `
+                    <div class="glass-panel mb-4">
+                        <h3 style="margin-bottom: 4px; color: var(--accent-color); font-weight: 600;">Backtested at Current Allocation</h3>
+                        <div class="text-muted" style="font-size: 0.85em; margin-bottom: 16px;">
+                            How today's exact allocation would have performed since ${data.historical.history_start_date} - not a replay of your actual trade history/weight drift.
+                        </div>
+                        <div class="grid grid-cols-3">
+                            <div class="metric-card"><div class="text-muted">Total Return</div><div style="font-size: 1.3rem; color: ${pnlColor(m.total_return)}">${fmtPct(m.total_return)}</div></div>
+                            <div class="metric-card"><div class="text-muted">Annualized Return</div><div style="font-size: 1.3rem;">${fmtPct(m.annualized_return)}</div></div>
+                            <div class="metric-card"><div class="text-muted">Annualized Vol</div><div style="font-size: 1.3rem;">${fmtPct(m.annualized_vol)}</div></div>
+                            <div class="metric-card"><div class="text-muted">Sharpe Ratio</div><div style="font-size: 1.3rem;">${m.sharpe_ratio.toFixed(2)}</div></div>
+                            <div class="metric-card"><div class="text-muted">Sortino Ratio</div><div style="font-size: 1.3rem;">${m.sortino_ratio.toFixed(2)}</div></div>
+                            <div class="metric-card"><div class="text-muted">Max Drawdown</div><div style="font-size: 1.3rem; color: var(--danger-color)">${fmtPct(m.max_drawdown)}</div></div>
+                        </div>
+                        ${constrained}
+                    </div>
+                `;
+            }
+
+            let forwardHtml = '';
+            if (data.forward.insufficient_history) {
+                forwardHtml = `<div class="glass-panel mb-4"><h3 style="margin-bottom: 8px; color: var(--accent-color); font-weight: 600;">Forward-Looking Outlook</h3><div class="text-muted">Insufficient combined history for forward-looking probabilities (needs 252+ overlapping trading days).</div></div>`;
+            } else {
+                forwardHtml = `
+                    <div class="glass-panel mb-4">
+                        <h3 style="margin-bottom: 16px; color: var(--accent-color); font-weight: 600;">Forward-Looking Outlook</h3>
+                        <div class="grid grid-cols-3">
+                            <div class="metric-card"><div class="text-muted">Prob. of Gain</div><div class="font-bold text-success" style="font-size: 1.3rem;">${fmtPct(data.forward.prob_success)}</div></div>
+                            <div class="metric-card"><div class="text-muted">Prob. of Loss</div><div class="font-bold text-danger" style="font-size: 1.3rem;">${fmtPct(data.forward.prob_stop)}</div></div>
+                            <div class="metric-card"><div class="text-muted">Expected Return</div><div style="font-size: 1.3rem;">${fmtPct(data.forward.exp_return)}</div></div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const sectorRows = Object.entries(data.sector_allocation || {}).sort((a, b) => b[1] - a[1]);
+            const sectorHtml = `
+                <div class="glass-panel mb-4">
+                    <h3 style="margin-bottom: 16px; color: var(--accent-color); font-weight: 600;">Sector Allocation</h3>
+                    <div class="grid" style="gap: 8px;">
+                        ${sectorRows.map(([sec, val]) => `
+                            <div class="flex justify-between">
+                                <span>${escapeHtml(sec)}</span>
+                                <span class="font-bold">${fmtUsd(val)} (${fmtPct(val / data.total_market_value)})</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+
+            const holdingsHtml = `
+                <div class="glass-panel">
+                    <h3 style="margin-bottom: 16px; color: var(--accent-color); font-weight: 600;">Holdings</h3>
+                    <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                        <thead>
+                            <tr class="text-muted" style="text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                <th style="padding: 8px;">Ticker</th><th style="padding: 8px;">Sector</th><th style="padding: 8px;">Shares</th>
+                                <th style="padding: 8px;">Price</th><th style="padding: 8px;">Market Value</th><th style="padding: 8px;">Weight</th>
+                                <th style="padding: 8px;">Unrealized P&amp;L</th><th style="padding: 8px;">Prob. Gain</th><th style="padding: 8px;">Prob. Loss</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.holdings.map(h => `
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 8px; font-weight: 600;">${escapeHtml(h.ticker)}</td>
+                                    <td style="padding: 8px;">${escapeHtml(h.sector)}</td>
+                                    <td style="padding: 8px;">${h.shares}</td>
+                                    <td style="padding: 8px;">${fmtUsd(h.current_price)}</td>
+                                    <td style="padding: 8px;">${fmtUsd(h.market_value)}</td>
+                                    <td style="padding: 8px;">${fmtPct(h.weight)}</td>
+                                    <td style="padding: 8px; color: ${pnlColor(h.unrealized_pnl)}">${h.unrealized_pnl === null ? 'N/A' : `${fmtUsd(h.unrealized_pnl)} (${fmtPct(h.unrealized_pnl_pct)})`}</td>
+                                    <td style="padding: 8px;" class="text-success">${fmtPct(h.prob_success)}</td>
+                                    <td style="padding: 8px;" class="text-danger">${fmtPct(h.prob_stop)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            `;
+
+            resultsDiv.innerHTML = excludedHtml + summaryHtml + historicalHtml + forwardHtml + sectorHtml + holdingsHtml;
         }
 
         // Start background ETA updater

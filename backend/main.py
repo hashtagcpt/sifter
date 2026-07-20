@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import uvicorn
 import pandas as pd
-from typing import Dict
+from typing import Dict, List, Optional
 import numpy as np
 
 from backend.data_engine import build_universe, fetch_data, get_fundamental_metrics, fetch_analyst_ratings
@@ -12,11 +12,13 @@ from backend.strategy_bayesian import apply_bayesian_reweighting
 from backend.stat_arb import calculate_cointegration, estimate_half_life, generate_z_scores
 from backend.factor_models import extract_pca_factors, rolling_factor_regression
 from backend.backtester import run_vectorized_backtest, run_vectorized_pairs_backtest, find_top_sortino_baskets
+from backend.portfolio import analyze_portfolio
 from backend.database import (
-    init_db, get_universe, save_universe, 
-    save_bayesian_view, get_bayesian_views, 
-    save_ai_macro_scores, get_ai_macro_score_history, 
-    get_analyst_rating_history
+    init_db, get_universe, save_universe,
+    save_bayesian_view, get_bayesian_views,
+    save_ai_macro_scores, get_ai_macro_score_history,
+    get_analyst_rating_history,
+    save_portfolio, list_portfolios, get_portfolio, delete_portfolio
 )
 
 from fastapi.staticfiles import StaticFiles
@@ -58,17 +60,18 @@ def check_ollama_status():
             if res.status_code == 200:
                 data = res.json()
                 models = [m.get("name") for m in data.get("models", [])]
-                required_models = ["gemma4:e4b", "llama3.1:8b", "gemma4:latest"]
-                available = [rm for rm in required_models if rm in models]
+                preferred_model = "llama3:70b"
+                available = preferred_model in models
                 
                 if not available:
-                    print(f"CRITICAL ERROR: None of the required models are available. Checked: {required_models}")
+                    print(
+                        f"CRITICAL ERROR: Ollama is running, but the required model '{preferred_model}' is not available. "
+                        "Sifter will not fall back automatically. If you need a smaller local alternative, "
+                        "pull 'llama3.1:8b' or 'llama3.2:latest' and rerun with that explicit model name."
+                    )
                     sys.exit(1)
                 else:
-                    if "gemma4:e4b" not in available:
-                        print(f"WARNING: Preferred model 'gemma4:e4b' is missing, but fallbacks are available: {available}")
-                    else:
-                        print(f"Ollama is running. Supported models found: {available}")
+                    print(f"Ollama is running. Supported model found: {preferred_model}")
                     return
         except requests.exceptions.RequestException:
             pass
@@ -172,7 +175,7 @@ def _save_cached_sector_note(ticker: str, sector: str, model: str, data: dict):
         print(f"Failed to save sentiment cache for {ticker}: {e}")
 
 
-def build_ticker_sentiment_note(ticker: str, model: str = "gemma4:e4b") -> dict:
+def build_ticker_sentiment_note(ticker: str, model: str = "llama3:70b") -> dict:
     """
     Use yfinance news and DDG peer news plus the local LLM to produce a one-sentence,
     ticker-aware sentiment note.
@@ -286,7 +289,7 @@ class ViewsRequest(BaseModel):
 @app.get("/api/health")
 def read_root(): return {"status": "ok", "message": "Quant Engine Running"}
 
-@app.post("/api/universe")
+@app.post("/api/universe/build")
 def generate_universe(req: UniverseRequest):
     uni = build_universe(req.max_size)
     if not uni: uni = ["AAPL", "MSFT", "GOOGL"] # fallback
@@ -329,7 +332,7 @@ def get_screener_results(prob_model: str = "garch"):
             rationale = generate_rationale(tk, val_score, float(z_score), analyst_buy, funds)
             
             # Raw composite score (Value + Momentum Reversal + Analyst + Probability)
-            raw_rank_score = val_score - (float(z_score) * 1.0) + (analyst_buy * 0.05) + (biweekly_probs["prob_success"] * 10.0)
+            raw_rank_score = (val_score * 2.0) - (float(z_score) * 0.5) + (analyst_buy * 0.05) + (biweekly_probs["prob_success"] * 5.0)
 
             
             results.append({
@@ -359,12 +362,12 @@ def get_screener_results(prob_model: str = "garch"):
 @app.get("/api/analyze_ticker/{tk}")
 def analyze_ticker(
     tk: str,
-    upside: float = 0.05,
-    downside: float = -0.05,
-    horizon: int = 30,
+    upside: float = 0.15,
+    downside: float = -0.15,
+    horizon: int = 120,
     prob_model: str = "garch",
     news_notes: bool = True,
-    model: str = "gemma4:e4b",
+    model: str = "llama3:70b",
 ):
     try:
         # Fundamentals and Ratings
@@ -511,7 +514,7 @@ from fastapi import Request, BackgroundTasks
 class ReportRequest(BaseModel):
     filename: str
     prob_model: str
-    model: str = "gemma4:e4b"
+    model: str = "llama3:70b"
 
 def generate_llm_report(req: ReportRequest):
     import json
@@ -752,7 +755,7 @@ async def save_history(request: Request):
         json.dump(data, f)
     return {"status": "success", "filename": filename}
 
-def compute_macro_ai_adjustment(model: str = "gemma4:e4b"):
+def compute_macro_ai_adjustment(model: str = "llama3:70b"):
     try:
         import requests
         import json
@@ -805,7 +808,7 @@ Recent News Context:
 {news_context}
 
 Based on these conditions and news, provide a sentiment multiplier from -1.0 to 1.0 for each of the following stock sectors, where -1.0 means highly negative outlook and 1.0 means highly positive outlook:
-Technology, Financial Services, Healthcare, Consumer Cyclical, Industrials, Energy, Utilities, Real Estate, Basic Materials, Communication Services, Consumer Defensive.
+Technology, Financial Services, Healthcare, Consumer Cyclical, Industrials, Energy, Utilities, Real Estate, Basic Materials, Communication Services, Consumer Defensive, Defense & Aerospace.
 
 Return ONLY a valid JSON dictionary where keys are the sector names and values are the float multipliers.
 """
@@ -1060,12 +1063,72 @@ def add_to_universe(req: UniverseAddRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+class PortfolioHoldingItem(BaseModel):
+    ticker: str
+    shares: float = Field(gt=0)
+    cost_basis: Optional[float] = None
+    purchase_date: Optional[str] = None
+
+class SavePortfolioRequest(BaseModel):
+    portfolio_id: Optional[int] = None
+    name: str
+    holdings: List[PortfolioHoldingItem]
+
+@app.post("/api/portfolio")
+def save_portfolio_endpoint(req: SavePortfolioRequest):
+    portfolio_id = save_portfolio(
+        req.name,
+        [h.dict() for h in req.holdings],
+        req.portfolio_id,
+    )
+    return {"status": "success", "portfolio_id": portfolio_id}
+
+@app.get("/api/portfolios")
+def list_portfolios_endpoint():
+    return {"status": "success", "portfolios": list_portfolios()}
+
+@app.get("/api/portfolio/{portfolio_id}")
+def get_portfolio_endpoint(portfolio_id: int):
+    portfolio = get_portfolio(portfolio_id)
+    if not portfolio:
+        return {"status": "error", "message": "Portfolio not found"}
+    return {"status": "success", "portfolio": portfolio}
+
+@app.delete("/api/portfolio/{portfolio_id}")
+def delete_portfolio_endpoint(portfolio_id: int):
+    delete_portfolio(portfolio_id)
+    return {"status": "success"}
+
+@app.get("/api/portfolio/{portfolio_id}/analyze")
+def analyze_portfolio_endpoint(
+    portfolio_id: int,
+    horizon: int = 120,
+    upside: float = 0.15,
+    downside: float = -0.15,
+    prob_model: str = "garch",
+):
+    portfolio = get_portfolio(portfolio_id)
+    if not portfolio:
+        return {"status": "error", "message": "Portfolio not found"}
+    if not portfolio["holdings"]:
+        return {"status": "error", "message": "Portfolio has no holdings"}
+
+    result = analyze_portfolio(
+        portfolio["holdings"],
+        horizon_days=horizon,
+        target_upside=upside,
+        target_downside=downside,
+        prob_model=prob_model,
+    )
+    result["name"] = portfolio["name"]
+    return result
+
 @app.get("/")
 def serve_frontend():
     return FileResponse(os.path.join(static_dir, "index.html"))
 
 @app.get("/api/macro_ai")
-def get_macro_ai_adjustment_endpoint(model: str = "gemma4:e4b"):
+def get_macro_ai_adjustment_endpoint(model: str = "llama3:70b"):
     try:
         from backend.main import compute_macro_ai_adjustment
         return compute_macro_ai_adjustment(model)
@@ -1136,7 +1199,7 @@ def get_performance_chart(tickers: str, start_date: str):
                 series = close_df[tk].dropna()
                 if not series.empty:
                     # Align to the main dates index and forward fill
-                    aligned = series.reindex(close_df.index).fillna(method='ffill').tolist()
+                    aligned = series.reindex(close_df.index).ffill().tolist()
                     raw_prices[tk] = aligned
                     
         return {

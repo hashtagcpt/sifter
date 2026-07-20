@@ -18,10 +18,25 @@ def test_read_root():
 
 @patch("backend.main.build_universe")
 def test_generate_universe(mock_build):
+    # POST /api/universe is the ticker-add endpoint (add_to_universe); building/refreshing
+    # the full universe list lives at its own path, POST /api/universe/build, so the two
+    # POST handlers that used to collide on "/api/universe" don't shadow each other.
     mock_build.return_value = ["AAPL", "MSFT"]
-    response = client.post("/api/universe", json={"max_size": 2500})
+    response = client.post("/api/universe/build", json={"max_size": 2500})
     assert response.status_code == 200
     assert response.json()["universe"] == ["AAPL", "MSFT"]
+
+@patch("backend.database.get_universe")
+@patch("backend.database.save_universe")
+@patch("yfinance.download")
+def test_add_to_universe(mock_download, mock_save, mock_get_universe):
+    mock_get_universe.return_value = ["MSFT"]
+    mock_download.return_value = pd.DataFrame({"Close": [100.0]})
+    response = client.post("/api/universe", json={"ticker": "aapl"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert "AAPL" in data["universe"]
 
 @patch("backend.main.build_universe")
 def test_scrape_universe(mock_build):

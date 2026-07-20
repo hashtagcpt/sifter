@@ -66,7 +66,30 @@ def init_db():
             PRIMARY KEY (ticker, data_type)
         )
     ''')
-    
+
+    # Saved portfolios
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS portfolios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    ''')
+
+    # Portfolio holdings (multiple lots per ticker are allowed - no unique constraint)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS portfolio_holdings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            portfolio_id INTEGER NOT NULL,
+            ticker TEXT NOT NULL,
+            shares REAL NOT NULL,
+            cost_basis REAL,
+            purchase_date TEXT,
+            FOREIGN KEY (portfolio_id) REFERENCES portfolios (id)
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -230,5 +253,80 @@ def save_fundamental_cache(ticker: str, data_type: str, data: dict):
         INSERT OR REPLACE INTO fundamental_cache (ticker, data_type, data_json, updated_at)
         VALUES (?, ?, ?, ?)
     ''', (ticker, data_type, json.dumps(data), now))
+    conn.commit()
+    conn.close()
+
+# --- Portfolios ---
+def save_portfolio(name: str, holdings: List[dict], portfolio_id: Optional[int] = None) -> int:
+    """
+    Create a new portfolio, or replace an existing one's holdings, in one call.
+    holdings: list of {"ticker": str, "shares": float, "cost_basis": float|None, "purchase_date": str|None}
+    Returns the portfolio id (new or existing).
+    """
+    conn = get_connection()
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+
+    if portfolio_id is None:
+        c.execute('INSERT INTO portfolios (name, created_at, updated_at) VALUES (?, ?, ?)', (name, now, now))
+        portfolio_id = c.lastrowid
+    else:
+        c.execute('UPDATE portfolios SET name = ?, updated_at = ? WHERE id = ?', (name, now, portfolio_id))
+        c.execute('DELETE FROM portfolio_holdings WHERE portfolio_id = ?', (portfolio_id,))
+
+    c.executemany('''
+        INSERT INTO portfolio_holdings (portfolio_id, ticker, shares, cost_basis, purchase_date)
+        VALUES (?, ?, ?, ?, ?)
+    ''', [
+        (portfolio_id, h["ticker"], h["shares"], h.get("cost_basis"), h.get("purchase_date"))
+        for h in holdings
+    ])
+
+    conn.commit()
+    conn.close()
+    return portfolio_id
+
+def list_portfolios() -> List[dict]:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT p.id, p.name, p.updated_at, COUNT(h.id)
+        FROM portfolios p
+        LEFT JOIN portfolio_holdings h ON h.portfolio_id = p.id
+        GROUP BY p.id
+        ORDER BY p.updated_at DESC
+    ''')
+    rows = c.fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "name": r[1], "updated_at": r[2], "holding_count": r[3]}
+        for r in rows
+    ]
+
+def get_portfolio(portfolio_id: int) -> Optional[dict]:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT id, name, updated_at FROM portfolios WHERE id = ?', (portfolio_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return None
+
+    c.execute('''
+        SELECT id, ticker, shares, cost_basis, purchase_date
+        FROM portfolio_holdings WHERE portfolio_id = ?
+    ''', (portfolio_id,))
+    holdings = [
+        {"id": h[0], "ticker": h[1], "shares": h[2], "cost_basis": h[3], "purchase_date": h[4]}
+        for h in c.fetchall()
+    ]
+    conn.close()
+    return {"id": row[0], "name": row[1], "updated_at": row[2], "holdings": holdings}
+
+def delete_portfolio(portfolio_id: int) -> None:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('DELETE FROM portfolio_holdings WHERE portfolio_id = ?', (portfolio_id,))
+    c.execute('DELETE FROM portfolios WHERE id = ?', (portfolio_id,))
     conn.commit()
     conn.close()

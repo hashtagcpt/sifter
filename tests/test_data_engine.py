@@ -3,7 +3,10 @@ import shutil
 import os
 from unittest.mock import patch, MagicMock
 import pandas as pd
-from backend.data_engine import build_universe, fetch_data, get_fundamental_metrics, fetch_analyst_ratings
+from backend.data_engine import (
+    build_universe, fetch_data, get_fundamental_metrics, fetch_analyst_ratings,
+    SUPPLEMENTAL_TICKERS,
+)
 
 @pytest.fixture(autouse=True)
 def clean_yf_cache():
@@ -60,6 +63,28 @@ def test_get_fundamental_metrics_decimal_yield(mock_ticker):
     
     metrics = get_fundamental_metrics("AAPL")
     assert abs(metrics["dividend_yield"] - 0.0141) < 1e-6
+
+@patch("backend.data_engine.yf.Ticker")
+def test_get_fundamental_metrics_manual_sector_override_beats_yfinance(mock_ticker):
+    # yfinance itself classifies LMT as "Industrials" - the manual override must win anyway.
+    mock_ticker.return_value.info = {"trailingPE": 18, "sector": "Industrials"}
+
+    metrics = get_fundamental_metrics("LMT")
+    assert metrics["sector"] == "Defense & Aerospace"
+
+
+@patch("backend.data_engine.save_universe")
+@patch("backend.data_engine.get_universe")
+def test_build_universe_merges_supplemental_tickers_via_cache(mock_get_universe, mock_save_universe):
+    # Simulate the common cold-start case: a populated universe already cached in sqlite.
+    mock_get_universe.return_value = ["AAPL", "MSFT", "GOOGL"]
+
+    universe = build_universe(max_size=2500)
+
+    for ticker in SUPPLEMENTAL_TICKERS:
+        assert ticker in universe
+    mock_save_universe.assert_called_once()
+
 
 @patch("backend.data_engine.yf.Ticker")
 def test_fetch_analyst_ratings(mock_ticker):

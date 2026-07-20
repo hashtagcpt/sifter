@@ -35,13 +35,13 @@ def run_historical_backtest(years=5):
     
     print("Running weekly simulations...")
     
-    for i in range(backtest_start_idx, total_days - 5, 5):
+    for i in range(backtest_start_idx, total_days - 20, 20):
         current_date = data.index[i]
         
         historical_slice = data.iloc[:i]
         
-        # Calculate 60-day correlation matrix
-        recent_returns = historical_slice.iloc[-60:].pct_change().dropna()
+        # Calculate 120-day correlation matrix
+        recent_returns = historical_slice.iloc[-120:].pct_change().dropna()
         corr_matrix = recent_returns.corr()
         
         weekly_scores = []
@@ -53,10 +53,10 @@ def run_historical_backtest(years=5):
             if len(tk_prices) < 252:
                 return None
                 
-            z = detrend_and_zscore(tk_prices, window=126)
+            z = detrend_and_zscore(tk_prices, window=252)
             z_score = z.iloc[-1] if not pd.isna(z.iloc[-1]) else 0.0
             
-            probs = calculate_probabilities(tk_prices, horizon_days=14, target_upside=0.05, max_downside=-0.05, n_paths=200) # reduced paths for speed
+            probs = calculate_probabilities(tk_prices, horizon_days=120, target_upside=0.15, max_downside=-0.15, n_paths=200) # reduced paths for speed
             
             # Anti-momentum / Mean-reversion
             raw_rank_score = (probs["prob_success"] * 10.0) - (float(z_score) * 1.0)
@@ -83,7 +83,7 @@ def run_historical_backtest(years=5):
             
         weekly_scores.sort(key=lambda x: x["rank_score"], reverse=True)
         if not weekly_scores:
-            dates.append(data.index[i+5])
+            dates.append(data.index[i+20])
             equity_curve.append(capital)
             continue
             
@@ -120,7 +120,7 @@ def run_historical_backtest(years=5):
         
         for tk in selected_portfolio:
             entry_price = data[tk].iloc[i]
-            exit_price = data[tk].iloc[i + 5]
+            exit_price = data[tk].iloc[i + 20]
             tk_ret = (exit_price / entry_price) - 1.0
             portfolio_return += (tk_ret / 3.0)
             trade_logs.append(f"{tk} (Price: ${entry_price:.2f})")
@@ -129,9 +129,9 @@ def run_historical_backtest(years=5):
         trade_pnl = capital * portfolio_return
         capital += trade_pnl
         equity_curve.append(capital)
-        dates.append(data.index[i+5])
+        dates.append(data.index[i+20])
         
-        print(f"{current_date.date()} | Portfolio: {', '.join(trade_logs)} | 1-Wk Port Ret: {portfolio_return*100:5.2f}% | Capital: ${capital:.2f}")
+        print(f"{current_date.date()} | Portfolio: {', '.join(trade_logs)} | 1-Mo Port Ret: {portfolio_return*100:5.2f}% | Capital: ${capital:.2f}")
 
     total_return = (capital / 1000.0) - 1.0
     equity_series = pd.Series(equity_curve)
